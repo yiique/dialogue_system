@@ -1,0 +1,2 @@
+model_params:
+  embedding.init_scale: 0.04
