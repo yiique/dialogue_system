@@ -84,8 +84,9 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
             tf.one_hot(tf.to_int32(tgt_dialogue), FLAGS.common_vocab + FLAGS.candidate_num, 1.0, 0.0) *
             tf.log(tf.clip_by_value(prob_simple, 1e-20, 1.0))
         )
-        train_grad_simple = tf.clip_by_global_norm(self.optimizer.compute_gradients(train_loss_simple),
-                                                   FLAGS.grad_clip)
+        # train_grad_simple = tf.clip_by_global_norm(self.optimizer.compute_gradients(train_loss_simple),
+        #                                            FLAGS.grad_clip)
+        train_grad_simple = self.optimizer.compute_gradients(train_loss_simple, self.params_simple)
         return src_dialogue, tgt_dialogue, turn_mask, src_mask, tgt_mask, \
                train_loss_simple, train_grad_simple
 
