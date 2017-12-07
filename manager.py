@@ -122,7 +122,7 @@ def main_simple():
             update = model_records[gpu_id].optimizer.apply_gradients(average_gradients(tower_grads))
             update_records.append(update)
 
-        config = tf.ConfigProto()
+        config = tf.ConfigProto(allow_soft_placement=True)
         config.gpu_options.allow_growth = True
         sess = tf.Session(config=config)
         sess.run(tf.global_variables_initializer())
