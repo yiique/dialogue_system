@@ -60,9 +60,9 @@ class Decoder(graph_base.GraphBase):
         x_emb_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).unstack(x_emb)
         x_m_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).unstack(x_m)
         prob_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
-        tgt_start_token = tf.one_hot(tf.ones([size], dtype=tf.int32) * FLAGS.start_token,
-                                     FLAGS.common_vocab + FLAGS.candidate_num, 1.0, 0.0)
-        prob_ta = prob_ta.write(0, tgt_start_token)
+        # tgt_start_token = tf.one_hot(tf.ones([size], dtype=tf.int32) * FLAGS.start_token,
+        #                              FLAGS.common_vocab + FLAGS.candidate_num, 1.0, 0.0)
+        # prob_ta = prob_ta.write(0, tgt_start_token)
 
         _, _, _, _, _, _, _, _, _, _, prob_ta, _ = control_flow_ops.while_loop(
             cond=lambda i, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11: i < x_pred_ta.size(),
