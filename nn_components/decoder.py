@@ -149,24 +149,48 @@ class Decoder(graph_base.GraphBase):
                utterance, weighted_sum_content, relevant_score, \
                x_pred_ta, x_emb_ta, x_m_ta, prob_ta, size
 
+    def forward_with_beam(self, utterance, weighted_sum_content, relevant_score, knowledge_embedding,
+                          size=FLAGS.beam_size):
+        prob_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+        pred_ta = tensor_array_ops.TensorArray(dtype=tf.int32, size=0, dynamic_size=True)
+        tgt_stark_token = tf.expand_dims(tf.ones(shape=[size], dtype=tf.int32) * FLAGS.start_token, -1)
+
+        _, _, _, _, _, _, _,  _, prob_ta, pred_ta, _, _ = control_flow_ops.while_loop(
+            cond=lambda i, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11: i < FLAGS.sen_max_len,
+            body=self._step_with_beam,
+            loop_vars=(
+                tf.constant(0, dtype=tf.int32),
+                tf.nn.softmax(relevant_score), tgt_stark_token,
+                tf.stack([[tf.zeros([size, self.hyper_params["score_nn_h_dim"]]),
+                           tf.zeros([size, self.hyper_params["score_nn_h_dim"]])]
+                          for _ in range(self.hyper_params["score_nn_layer_num"])]),
+                tf.stack([[tf.zeros([size, self.hyper_params["gen_nn_h_dim"]]),
+                           tf.zeros([size, self.hyper_params["gen_nn_h_dim"]])]
+                          for _ in range(self.hyper_params["gen_nn_layer_num"])]),
+                utterance, weighted_sum_content, relevant_score, prob_ta, pred_ta, knowledge_embedding, size
+            )
+        )
+        prob_ta = prob_ta.stack()
+        pred_ta = pred_ta.stack()
+        return prob_ta, pred_ta
+
     def _step_with_beam(self, i,
-              score_tm1,
+              score_tm1, x_pred_t,
               score_cell_tm1, gen_cell_tm1,
               utterance, weighted_sum_content, relevant_score,
-              x_pred_ta, x_emb_ta, x_m_ta, prob_ta,
+              prob_ta, pred_ta, knowledge_embedding,
               size=FLAGS.beam_size):
         """
         step with golden
         :param score_tm1: size * can
-        :param score_cell_tm1: score hidden with memory in layer_num * 2 * size * h_dim
-        :param gen_cell_tm1: gen hidden with memory in layer_num * 2 * size * h_dim
+        :param x_pred_t: size * 1
         :param utterance: size * hred_h_dim
         :param weighted_sum_content: size * emb_dim
         :param relevant_score: size * can
+        :param knowledge_embedding: special embedding in (common_words+can) * e_dim extracted for each dialogue turn
         """
-        x_pred_t = x_pred_ta.read(i)
-        x_emb_t = x_emb_ta.read(i)
-        x_m_t = x_m_ta.read(i)
+        x_emb_t = tf.nn.embedding_lookup(knowledge_embedding, tf.squeeze(x_pred_t))
+        x_m_t = tf.ones(shape=[FLAGS.beam_size, 1], dtype=tf.float32)
 
         # score
         score_cell_ts = [tf.unstack(cell) for cell in tf.unstack(score_cell_tm1)]
@@ -184,7 +208,7 @@ class Decoder(graph_base.GraphBase):
                 score_x, x_pred_t, score_tm1, score_content, score_cell_tm1, size)
         else:
             raise KeyError
-        score_logits = tf.reshape(score_logits, [FLAGS.batch_size, FLAGS.candidate_num])
+        score_logits = tf.reshape(score_logits, [FLAGS.beam_size, FLAGS.candidate_num])
 
         # gen
         gen_content = tf.concat([utterance, score_logits], 1)
@@ -202,17 +226,19 @@ class Decoder(graph_base.GraphBase):
 
         # predict
         prob = self.predict_unit(gen_logits, score_logits, latent_logits, size)
+        pred = tf.reshape(tf.arg_max(prob, 1), [-1, 1])
         prob_ta = prob_ta.write(i, prob)
+        pred_ta = pred_ta.write(i, pred)
 
-        return i+1, score_logits, \
+        return i+1, score_logits, pred, \
                tf.reshape(
                    tf.stack(score_cell_ts),
-                   [self.hyper_params["score_nn_layer_num"], 2, FLAGS.batch_size, self.hyper_params["score_nn_h_dim"]]), \
+                   [self.hyper_params["score_nn_layer_num"], 2, FLAGS.beam_size, self.hyper_params["score_nn_h_dim"]]), \
                tf.reshape(
                    tf.stack(gen_cell_ts),
-                   [self.hyper_params["gen_nn_layer_num"], 2, FLAGS.batch_size, self.hyper_params["gen_nn_h_dim"]]), \
+                   [self.hyper_params["gen_nn_layer_num"], 2, FLAGS.beam_size, self.hyper_params["gen_nn_h_dim"]]), \
                utterance, weighted_sum_content, relevant_score, \
-               x_pred_ta, x_emb_ta, x_m_ta, prob_ta, size
+               prob_ta, pred_ta, knowledge_embedding, size
 
     def create_unit(self):
         # scorer
