@@ -101,8 +101,8 @@ def main_simple():
 
     with tf.device('/cpu:0'):
         model = model_bi_gate.BiScorerGateDecoderModel(hyper_params=hyper_params)
-        s_d, t_d, turn_m, s_m, t_m, loss, grad = model.build_tower()
-        update = model.optimizer.apply_gradients(grad)
+        s_d, t_d, turn_m, s_m, t_m, loss, update = model.build_tower()
+        # update = model.optimizer.apply_gradients(grad)
 
         config = tf.ConfigProto(allow_soft_placement=True)
         config.gpu_options.allow_growth = True
