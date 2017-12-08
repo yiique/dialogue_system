@@ -87,11 +87,10 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
         )
         # train_grad_simple = tf.clip_by_global_norm(self.optimizer.compute_gradients(train_loss_simple),
         #                                            FLAGS.grad_clip)
-        # train_grad_simple = self.optimizer.compute_gradients(train_loss_simple, self.params_simple)
-        train_grad_simple = tf.gradients(train_loss_simple, self.params_simple)
-        train_update_simple = self.optimizer.apply_gradients(zip(train_grad_simple, self.params_simple))
+        train_grad_simple = self.optimizer.compute_gradients(train_loss_simple, self.params_simple)
+        # train_update_simple = self.optimizer.apply_gradients(zip(train_grad_simple, self.params_simple))
         return src_dialogue, tgt_dialogue, turn_mask, src_mask, tgt_mask, \
-               train_loss_simple, train_update_simple
+               train_loss_simple, train_grad_simple
 
     '''def train_batch_simple(self, sess,
                            batch_src_dialogue, batch_tgt_dialogue, batch_turn_mask, batch_src_mask, batch_tgt_mask):

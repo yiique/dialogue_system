@@ -33,6 +33,7 @@ FLAGS = tf.flags.FLAGS
 tf.flags.DEFINE_integer("GPU_num", 4, """""")
 
 tf.flags.DEFINE_integer("batch_size", 40, """""")
+tf.flags.DEFINE_integer("beam_size", 1, """""")
 tf.flags.DEFINE_integer("dia_max_len", 10, """""")
 tf.flags.DEFINE_integer("sen_max_len", 60, """""")
 tf.flags.DEFINE_integer("candidate_num", 300,
@@ -48,7 +49,7 @@ tf.flags.DEFINE_integer("unk", 8602, """""")
 
 tf.flags.DEFINE_float("grad_clip", 5.0, """""")
 tf.flags.DEFINE_float("learning_rate", 0.001, """""")
-tf.flags.DEFINE_integer("epoch", 100, """""")
+tf.flags.DEFINE_integer("epoch", 300, """""")
 
 tf.flags.DEFINE_string("weight_path", "./data/corpus1/weight.save", """""")
 
@@ -101,8 +102,8 @@ def main_simple():
 
     with tf.device('/cpu:0'):
         model = model_bi_gate.BiScorerGateDecoderModel(hyper_params=hyper_params)
-        s_d, t_d, turn_m, s_m, t_m, loss, update = model.build_tower()
-        # update = model.optimizer.apply_gradients(grad)
+        s_d, t_d, turn_m, s_m, t_m, loss, grad = model.build_tower()
+        update = model.optimizer.apply_gradients(grad)
 
         config = tf.ConfigProto(allow_soft_placement=True)
         config.gpu_options.allow_growth = True
@@ -157,6 +158,7 @@ def main_simple():
                 tf.logging.info("---------------------loss-------------------")
                 tf.logging.info(loss_value)
                 losses.append(loss_value)
+                f.seek(0)
                 break
 
         model.save_weight(sess)

@@ -99,7 +99,71 @@ class Decoder(graph_base.GraphBase):
         :param weighted_sum_content: size * emb_dim
         :param relevant_score: size * can
         """
+        x_pred_t = x_pred_ta.read(i)
+        x_emb_t = x_emb_ta.read(i)
+        x_m_t = x_m_ta.read(i)
 
+        # score
+        score_cell_ts = [tf.unstack(cell) for cell in tf.unstack(score_cell_tm1)]
+        if self.hyper_params["decoder_type"] == "MASK":
+            score_logits = self.score_unit(score_tm1, x_pred_t, size)
+        elif self.hyper_params["decoder_type"] == "GATE":
+            score_content = tf.concat([
+                utterance, weighted_sum_content, relevant_score, score_tm1, x_emb_t], 1)
+            score_logits = self.score_unit(score_content, score_tm1, x_pred_t, size)
+        elif self.hyper_params["decoder_type"] == "JOINT":
+            score_content = tf.concat([
+                utterance, weighted_sum_content, relevant_score], 1)
+            score_x = tf.concat([score_tm1, x_emb_t], 1)
+            score_cell_ts, score_logits = self.score_unit(
+                score_x, x_pred_t, score_tm1, score_content, score_cell_tm1, size)
+        else:
+            raise KeyError
+        score_logits = tf.reshape(score_logits, [FLAGS.batch_size, FLAGS.candidate_num])
+
+        # gen
+        gen_content = tf.concat([utterance, score_logits], 1)
+        gen_cell_ts, gen_logits = self.gen_unit(x_emb_t, x_m_t, gen_content, gen_cell_tm1)
+
+        # latent
+        if self.hyper_params["decoder_type"] == "MASK" or self.hyper_params["decoder_type"] == "GATE":
+            latent_hidden = tf.concat([x_emb_t, score_logits, utterance, relevant_score, gen_cell_ts[-1][0]], 1)
+        elif self.hyper_params["decoder_type"] == "JOINT":
+            latent_hidden = tf.concat([
+                x_emb_t, score_logits, utterance, relevant_score, gen_cell_ts[-1][0], score_cell_ts[-1][0]], 1)
+        else:
+            raise KeyError
+        latent_logits = self.latent_unit(latent_hidden)
+
+        # predict
+        prob = self.predict_unit(gen_logits, score_logits, latent_logits, size)
+        prob_ta = prob_ta.write(i, prob)
+
+        return i+1, score_logits, \
+               tf.reshape(
+                   tf.stack(score_cell_ts),
+                   [self.hyper_params["score_nn_layer_num"], 2, FLAGS.batch_size, self.hyper_params["score_nn_h_dim"]]), \
+               tf.reshape(
+                   tf.stack(gen_cell_ts),
+                   [self.hyper_params["gen_nn_layer_num"], 2, FLAGS.batch_size, self.hyper_params["gen_nn_h_dim"]]), \
+               utterance, weighted_sum_content, relevant_score, \
+               x_pred_ta, x_emb_ta, x_m_ta, prob_ta, size
+
+    def _step_with_beam(self, i,
+              score_tm1,
+              score_cell_tm1, gen_cell_tm1,
+              utterance, weighted_sum_content, relevant_score,
+              x_pred_ta, x_emb_ta, x_m_ta, prob_ta,
+              size=FLAGS.beam_size):
+        """
+        step with golden
+        :param score_tm1: size * can
+        :param score_cell_tm1: score hidden with memory in layer_num * 2 * size * h_dim
+        :param gen_cell_tm1: gen hidden with memory in layer_num * 2 * size * h_dim
+        :param utterance: size * hred_h_dim
+        :param weighted_sum_content: size * emb_dim
+        :param relevant_score: size * can
+        """
         x_pred_t = x_pred_ta.read(i)
         x_emb_t = x_emb_ta.read(i)
         x_m_t = x_m_ta.read(i)
