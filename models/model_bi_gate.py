@@ -80,10 +80,10 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
 
         prob_simple = self.train_forward_simple(src_dialogue, tgt_dialogue,
                                                 turn_mask, src_mask, tgt_mask)
-        train_loss_simple = -tf.reduce_sum(
-            tf.reduce_sum(
+        train_loss_simple = -tf.reduce_mean(
+            tf.reduce_sum(tf.reduce_sum(
                 tf.one_hot(tf.to_int32(tgt_dialogue), FLAGS.common_vocab + FLAGS.candidate_num, 1.0, 0.0) *
-                tf.log(tf.clip_by_value(prob_simple, 1e-20, 1.0)), -1) * tgt_mask
+                tf.log(tf.clip_by_value(prob_simple, 1e-20, 1.0)), -1) * tgt_mask, [0, 1])
         )
         # train_grad_simple = tf.clip_by_global_norm(self.optimizer.compute_gradients(train_loss_simple),
         #                                            FLAGS.grad_clip)
@@ -159,7 +159,8 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
     def get_optimizer(self, *args, **kwargs):
         # return tf.train.AdadeltaOptimizer()
         # ada should be initialize before use, so it should be written in __init__
-        return tf.train.GradientDescentOptimizer(FLAGS.learning_rate)
+        # return tf.train.GradientDescentOptimizer(FLAGS.learning_rate)
+        return tf.train.RMSPropOptimizer(FLAGS.learning_rate)
 
     def save_weight(self, session, idx=None):
         if idx:

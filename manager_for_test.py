@@ -46,8 +46,8 @@ tf.flags.DEFINE_integer("start_token", 8601, """""")
 tf.flags.DEFINE_integer("end_token", 8600, """""")
 tf.flags.DEFINE_integer("unk", 8602, """""")
 
-tf.flags.DEFINE_integer("grad_clip", 5.0, """""")
-tf.flags.DEFINE_integer("learning_rate", 0.001, """""")
+tf.flags.DEFINE_float("grad_clip", 5.0, """""")
+tf.flags.DEFINE_float("learning_rate", 0.001, """""")
 tf.flags.DEFINE_integer("epoch", 100, """""")
 
 tf.flags.DEFINE_string("weight_path", "./data/corpus1/weight.save", """""")

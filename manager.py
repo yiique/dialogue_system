@@ -46,8 +46,8 @@ tf.flags.DEFINE_integer("start_token", 8601, """""")
 tf.flags.DEFINE_integer("end_token", 8600, """""")
 tf.flags.DEFINE_integer("unk", 8602, """""")
 
-tf.flags.DEFINE_integer("grad_clip", 5.0, """""")
-tf.flags.DEFINE_integer("learning_rate", 0.001, """""")
+tf.flags.DEFINE_float("grad_clip", 5.0, """""")
+tf.flags.DEFINE_float("learning_rate", 0.001, """""")
 tf.flags.DEFINE_integer("epoch", 1, """""")
 
 tf.flags.DEFINE_string("weight_path", "./data/corpus1/weight.save", """""")
@@ -170,7 +170,8 @@ def main_simple():
                     feed_dict[tower_records[i][3]] = src_mask
                     feed_dict[tower_records[i][4]] = tgt_mask
 
-                loss, _ = sess.run([avg_loss] + update_records, feed_dict=feed_dict)
+                outputs = sess.run([avg_loss] + update_records, feed_dict=feed_dict)
+                loss = outputs[0]
 
                 tf.logging.info("---------------------count-------------------")
                 tf.logging.info(str(_) + "-" + str(count) + "    " + time.ctime())
