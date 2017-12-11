@@ -54,18 +54,18 @@ class Decoder(graph_base.GraphBase):
         :param utterance: size * hred_h_dim
         :param weighted_sum_content: size * e_dim
         :param relevant_score: size * can
-        :return: max_len * size * vocab_size
+        :return: max_len * size * vocab_size(with start_token pre written)
         """
         x_pred_ta = tensor_array_ops.TensorArray(dtype=tf.int32, size=0, dynamic_size=True).unstack(tf.to_int32(x_pred))
         x_emb_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).unstack(x_emb)
         x_m_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).unstack(x_m)
         prob_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
-        # tgt_start_token = tf.one_hot(tf.ones([size], dtype=tf.int32) * FLAGS.start_token,
-        #                              FLAGS.common_vocab + FLAGS.candidate_num, 1.0, 0.0)
-        # prob_ta = prob_ta.write(0, tgt_start_token)
+        tgt_start_token = tf.one_hot(tf.ones([size], dtype=tf.int32) * FLAGS.start_token,
+                                     FLAGS.common_vocab + FLAGS.candidate_num, 1.0, 0.0)
+        prob_ta = prob_ta.write(0, tgt_start_token)
 
         _, _, _, _, _, _, _, _, _, _, prob_ta, _ = control_flow_ops.while_loop(
-            cond=lambda i, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11: i < x_pred_ta.size(),
+            cond=lambda i, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11: i < x_pred_ta.size()-1,
             body=self._step,
             loop_vars=(
                 tf.constant(0, dtype=tf.int32),
@@ -137,7 +137,7 @@ class Decoder(graph_base.GraphBase):
 
         # predict
         prob = self.predict_unit(gen_logits, score_logits, latent_logits, size)
-        prob_ta = prob_ta.write(i, prob)
+        prob_ta = prob_ta.write(i+1, prob)
 
         return i+1, score_logits, \
                tf.reshape(
@@ -154,9 +154,10 @@ class Decoder(graph_base.GraphBase):
         prob_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
         pred_ta = tensor_array_ops.TensorArray(dtype=tf.int32, size=0, dynamic_size=True)
         tgt_stark_token = tf.expand_dims(tf.ones(shape=[size], dtype=tf.int32) * FLAGS.start_token, -1)
+        pred_ta = pred_ta.write(0, tgt_stark_token)
 
         _, _, _, _, _, _, _,  _, prob_ta, pred_ta, _, _ = control_flow_ops.while_loop(
-            cond=lambda i, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11: i < FLAGS.sen_max_len,
+            cond=lambda i, _1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11: i < FLAGS.sen_max_len-1,
             body=self._step_with_beam,
             loop_vars=(
                 tf.constant(0, dtype=tf.int32),
@@ -189,7 +190,7 @@ class Decoder(graph_base.GraphBase):
         :param relevant_score: size * can
         :param knowledge_embedding: special embedding in (common_words+can) * e_dim extracted for each dialogue turn
         """
-        x_emb_t = tf.nn.embedding_lookup(knowledge_embedding, tf.squeeze(x_pred_t))
+        x_emb_t = tf.nn.embedding_lookup(knowledge_embedding, tf.squeeze(x_pred_t, -1))
         x_m_t = tf.ones(shape=[FLAGS.beam_size, 1], dtype=tf.float32)
 
         # score
@@ -226,9 +227,9 @@ class Decoder(graph_base.GraphBase):
 
         # predict
         prob = self.predict_unit(gen_logits, score_logits, latent_logits, size)
-        pred = tf.reshape(tf.arg_max(prob, 1), [-1, 1])
+        pred = tf.to_int32(tf.reshape(tf.arg_max(prob, 1), [FLAGS.beam_size, 1]))
         prob_ta = prob_ta.write(i, prob)
-        pred_ta = pred_ta.write(i, pred)
+        pred_ta = pred_ta.write(i+1, pred)
 
         return i+1, score_logits, pred, \
                tf.reshape(

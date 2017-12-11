@@ -170,8 +170,8 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
     def get_optimizer(self, *args, **kwargs):
         # return tf.train.AdadeltaOptimizer()
         # ada should be initialize before use, so it should be written in __init__
-        # return tf.train.GradientDescentOptimizer(FLAGS.learning_rate)
-        return tf.train.RMSPropOptimizer(FLAGS.learning_rate)
+        return tf.train.GradientDescentOptimizer(FLAGS.learning_rate)
+        # return tf.train.RMSPropOptimizer(FLAGS.learning_rate)
 
     def save_weight(self, session, idx=None):
         if idx:
