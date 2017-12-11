@@ -100,7 +100,7 @@ def main_simple():
         "decoder_mlp_h_dim": 512
     }
 
-    with tf.device('/cpu:0'):
+    with tf.device('/gpu:0'):
         model = model_bi_gate.BiScorerGateDecoderModel(hyper_params=hyper_params)
         s_d, t_d, turn_m, s_m, t_m, loss, grad = model.build_tower()
         update = model.optimizer.apply_gradients(grad)
