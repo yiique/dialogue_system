@@ -32,7 +32,8 @@ FLAGS = tf.flags.FLAGS
 
 tf.flags.DEFINE_integer("GPU_num", 4, """""")
 
-tf.flags.DEFINE_integer("batch_size", 80, """""")
+tf.flags.DEFINE_integer("batch_size", 40, """""")
+tf.flags.DEFINE_integer("beam_size", 1, """""")
 tf.flags.DEFINE_integer("dia_max_len", 10, """""")
 tf.flags.DEFINE_integer("sen_max_len", 60, """""")
 tf.flags.DEFINE_integer("candidate_num", 300,
@@ -154,8 +155,8 @@ def main_simple():
                     break
 
                 count += 1
-                if count % 50 == 0:
-                    model.save_weight(sess)
+                if count % 500 == 0:
+                    model.save_weight(sess, "." + str(_) + "-" + str(count))
 
                 feed_dict = {}
                 for i in range(FLAGS.GPU_num):
