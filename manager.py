@@ -49,7 +49,7 @@ tf.flags.DEFINE_integer("unk", 8602, """""")
 
 tf.flags.DEFINE_float("grad_clip", 5.0, """""")
 tf.flags.DEFINE_float("learning_rate", 0.001, """""")
-tf.flags.DEFINE_integer("epoch", 1, """""")
+tf.flags.DEFINE_integer("epoch", 5, """""")
 
 tf.flags.DEFINE_string("weight_path", "./data/corpus1/weight.save", """""")
 
@@ -83,7 +83,6 @@ def main_simple():
     random.seed(SEED)
     np.random.seed(SEED)
 
-    tf.logging.info("STEP1: Init...")
     f = open("./data/corpus1/mul_dia.index", 'r')
 
     hyper_params = {
@@ -101,27 +100,23 @@ def main_simple():
     }
 
     with tf.device('/cpu:0'):
-        tf.logging.info("STEP2: Map/Reduce...")
-        tower_records = []
-        model_records = []
-        update_records = []
+        tf.logging.info("STEP1: Init...")
+        model = model_bi_gate.BiScorerGateDecoderModel(hyper_params=hyper_params)
 
+        tower_records = []
+        tf.logging.info("STEP2: Map/Reduce...")
         for gpu_id in range(FLAGS.GPU_num):
             with tf.device('/gpu:%d' % gpu_id):
-                tf.logging.info('tower:%d...' % gpu_id)
+                tf.logging.info('Building tower:%d...' % gpu_id)
                 with tf.name_scope('tower_%d' % gpu_id):
                     with tf.variable_scope('cpu_variables', reuse=gpu_id > 0):
-                        model = model_bi_gate.BiScorerGateDecoderModel(hyper_params=hyper_params)
                         s_d, t_d, turn_m, s_m, t_m, loss_simple, grad_simple = model.build_tower()
                         tower_records.append(
                             (s_d, t_d, turn_m, s_m, t_m, loss_simple, grad_simple))
-                        model_records.append(model)
 
         _, _, _, _, _, tower_losses, tower_grads = zip(*tower_records)
         avg_loss = tf.reduce_mean(tower_losses)
-        for gpu_id in range(FLAGS.GPU_num):
-            update = model_records[gpu_id].optimizer.apply_gradients(average_gradients(tower_grads))
-            update_records.append(update)
+        update = model.optimizer.apply_gradients(average_gradients(tower_grads))
 
         config = tf.ConfigProto(allow_soft_placement=True)
         config.gpu_options.allow_growth = True
@@ -129,8 +124,7 @@ def main_simple():
         sess.run(tf.global_variables_initializer())
 
         try:
-            for gpu_id in range(FLAGS.GPU_num):
-                model_records[gpu_id].load_weight(sess)
+            model.load_weight(sess)
         except:
             tf.logging.warning("NO WEIGHT FILE, INIT FROM BEGINNING...")
 
@@ -171,14 +165,14 @@ def main_simple():
                     feed_dict[tower_records[i][3]] = src_mask
                     feed_dict[tower_records[i][4]] = tgt_mask
 
-                outputs = sess.run([avg_loss] + update_records, feed_dict=feed_dict)
-                loss = outputs[0]
+                outputs = sess.run([avg_loss, tower_losses, update], feed_dict=feed_dict)
 
                 tf.logging.info("---------------------count-------------------")
                 tf.logging.info(str(ep) + "-" + str(count) + "    " + time.ctime())
                 tf.logging.info("---------------------loss-------------------")
-                tf.logging.info(loss)
-                losses.append(loss)
+                tf.logging.info(outputs[0])
+                tf.logging.info(outputs[1])
+                losses.append(outputs[0])
 
         model.save_weight(sess)
 
