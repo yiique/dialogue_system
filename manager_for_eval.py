@@ -32,7 +32,7 @@ FLAGS = tf.flags.FLAGS
 
 tf.flags.DEFINE_integer("GPU_num", 4, """""")
 
-tf.flags.DEFINE_integer("batch_size", 40, """""")
+tf.flags.DEFINE_integer("batch_size", 1, """""")
 tf.flags.DEFINE_integer("beam_size", 1, """""")
 tf.flags.DEFINE_integer("dia_max_len", 10, """""")
 tf.flags.DEFINE_integer("sen_max_len", 60, """""")
@@ -101,27 +101,8 @@ def main_simple():
     }
 
     with tf.device('/cpu:0'):
-        tf.logging.info("STEP2: Map/Reduce...")
-        tower_records = []
-        model_records = []
-        update_records = []
-
-        for gpu_id in range(FLAGS.GPU_num):
-            with tf.device('/gpu:%d' % gpu_id):
-                tf.logging.info('tower:%d...' % gpu_id)
-                with tf.name_scope('tower_%d' % gpu_id):
-                    with tf.variable_scope('cpu_variables', reuse=gpu_id > 0):
-                        model = model_bi_gate.BiScorerGateDecoderModel(hyper_params=hyper_params)
-                        s_d, t_d, turn_m, s_m, t_m, loss_simple, grad_simple = model.build_tower()
-                        tower_records.append(
-                            (s_d, t_d, turn_m, s_m, t_m, loss_simple, grad_simple))
-                        model_records.append(model)
-
-        _, _, _, _, _, tower_losses, tower_grads = zip(*tower_records)
-        avg_loss = tf.reduce_mean(tower_losses)
-        for gpu_id in range(FLAGS.GPU_num):
-            update = model_records[gpu_id].optimizer.apply_gradients(average_gradients(tower_grads))
-            update_records.append(update)
+        model = model_bi_gate.BiScorerGateDecoderModel(hyper_params=hyper_params)
+        s_d, s_m, prob, pred = model.build_eval()
 
         config = tf.ConfigProto(allow_soft_placement=True)
         config.gpu_options.allow_growth = True
@@ -129,22 +110,20 @@ def main_simple():
         sess.run(tf.global_variables_initializer())
 
         try:
-            for gpu_id in range(FLAGS.GPU_num):
-                model_records[gpu_id].load_weight(sess)
+            model.load_weight(sess)
         except:
             tf.logging.warning("NO WEIGHT FILE, INIT FROM BEGINNING...")
 
-        tf.logging.info("STEP3: Training...")
+        tf.logging.info("STEP2: Training...")
         losses = []
         count = 0
-        for ep in range(FLAGS.epoch):
+        for _ in range(FLAGS.epoch):
             while True:
                 try:
-                    batches = [[] for _ in range(FLAGS.GPU_num)]
-                    for i in range(FLAGS.GPU_num):
-                        for j in range(FLAGS.batch_size):
-                            line = f.readline()[:-1]
-                            batches[i].append(json.loads(line))
+                    batch = []
+                    for j in range(FLAGS.batch_size):
+                        line = f.readline()[:-1]
+                        batch.append(json.loads(line))
                 except:
                     tf.logging.info("============================================================")
                     tf.logging.info("avg loss: " + str(np.mean(losses)))
@@ -154,33 +133,30 @@ def main_simple():
                     losses = []
                     break
 
-                count += 1
-                if count % 500 == 0:
-                    model.save_weight(sess, "." + str(ep) + "-" + str(count))
+                # count += 1
+                # if count % 50 == 0:
+                #     model.save_weight(sess)
 
                 feed_dict = {}
-                for i in range(FLAGS.GPU_num):
-                    src_dialogue = np.transpose([sample["src_dialogue"] for sample in batches[i]], [1, 2, 0])
-                    tgt_dialogue = np.transpose([sample["tgt_dialogue"] for sample in batches[i]], [1, 2, 0])
-                    turn_mask = np.transpose([sample["turn_mask"] for sample in batches[i]], [1, 0])
-                    src_mask = np.transpose([sample["src_mask"] for sample in batches[i]], [1, 2, 0])
-                    tgt_mask = np.transpose([sample["tgt_mask"] for sample in batches[i]], [1, 2, 0])
-                    feed_dict[tower_records[i][0]] = src_dialogue
-                    feed_dict[tower_records[i][1]] = tgt_dialogue
-                    feed_dict[tower_records[i][2]] = turn_mask
-                    feed_dict[tower_records[i][3]] = src_mask
-                    feed_dict[tower_records[i][4]] = tgt_mask
+                src_dialogue = np.transpose([sample["src_dialogue"] for sample in batch], [1, 2, 0])
+                tgt_dialogue = np.transpose([sample["tgt_dialogue"] for sample in batch], [1, 2, 0])
+                src_mask = np.transpose([sample["src_mask"] for sample in batch], [1, 2, 0])
+                feed_dict[s_d] = src_dialogue
+                feed_dict[s_m] = src_mask
 
-                outputs = sess.run([avg_loss] + update_records, feed_dict=feed_dict)
-                loss = outputs[0]
+                outputs = sess.run([prob, pred], feed_dict=feed_dict)
+                pred_tgt = outputs[0]
 
-                tf.logging.info("---------------------count-------------------")
-                tf.logging.info(str(ep) + "-" + str(count) + "    " + time.ctime())
-                tf.logging.info("---------------------loss-------------------")
-                tf.logging.info(loss)
-                losses.append(loss)
+                tf.logging.info("---------------------src-------------------")
+                print src_dialogue
+                tf.logging.info("---------------------tgt-------------------")
+                print tgt_dialogue
+                tf.logging.info("---------------------pred-------------------")
+                print pred_tgt
+                f.seek(0)
+                break
 
-        model.save_weight(sess)
+        # model.save_weight(sess)
 
 
 if __name__ == "__main__":
