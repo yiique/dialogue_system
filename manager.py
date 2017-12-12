@@ -137,7 +137,7 @@ def main_simple():
         tf.logging.info("STEP3: Training...")
         losses = []
         count = 0
-        for _ in range(FLAGS.epoch):
+        for ep in range(FLAGS.epoch):
             while True:
                 try:
                     batches = [[] for _ in range(FLAGS.GPU_num)]
@@ -156,7 +156,7 @@ def main_simple():
 
                 count += 1
                 if count % 500 == 0:
-                    model.save_weight(sess, "." + str(_) + "-" + str(count))
+                    model.save_weight(sess, "." + str(ep) + "-" + str(count))
 
                 feed_dict = {}
                 for i in range(FLAGS.GPU_num):
@@ -175,7 +175,7 @@ def main_simple():
                 loss = outputs[0]
 
                 tf.logging.info("---------------------count-------------------")
-                tf.logging.info(str(_) + "-" + str(count) + "    " + time.ctime())
+                tf.logging.info(str(ep) + "-" + str(count) + "    " + time.ctime())
                 tf.logging.info("---------------------loss-------------------")
                 tf.logging.info(loss)
                 losses.append(loss)
