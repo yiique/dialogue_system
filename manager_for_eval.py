@@ -33,7 +33,7 @@ FLAGS = tf.flags.FLAGS
 tf.flags.DEFINE_integer("GPU_num", 4, """""")
 
 tf.flags.DEFINE_integer("batch_size", 1, """""")
-tf.flags.DEFINE_integer("beam_size", 1, """""")
+tf.flags.DEFINE_integer("beam_size", 10, """""")
 tf.flags.DEFINE_integer("dia_max_len", 10, """""")
 tf.flags.DEFINE_integer("sen_max_len", 60, """""")
 tf.flags.DEFINE_integer("candidate_num", 300,
@@ -133,10 +133,6 @@ def main_simple():
                     losses = []
                     break
 
-                # count += 1
-                # if count % 50 == 0:
-                #     model.save_weight(sess)
-
                 feed_dict = {}
                 src_dialogue = np.transpose([sample["src_dialogue"] for sample in batch], [1, 2, 0])
                 tgt_dialogue = np.transpose([sample["tgt_dialogue"] for sample in batch], [1, 2, 0])
@@ -152,9 +148,10 @@ def main_simple():
                 tf.logging.info("---------------------tgt-------------------")
                 print tgt_dialogue
                 tf.logging.info("---------------------pred-------------------")
-                print pred_tgt
-                f.seek(0)
-                break
+                print outputs[0]
+                print outputs[1]
+                # f.seek(0)
+                # break
 
         # model.save_weight(sess)
 
