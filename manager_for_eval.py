@@ -32,8 +32,9 @@ FLAGS = tf.flags.FLAGS
 
 tf.flags.DEFINE_integer("GPU_num", 4, """""")
 
-tf.flags.DEFINE_integer("batch_size", 1, """""")
-tf.flags.DEFINE_integer("beam_size", 1, """""")
+tf.flags.DEFINE_integer("batch_size", 1,
+                        """batch_size for eval should be 1 at a time""")
+tf.flags.DEFINE_integer("beam_size", 10, """""")
 tf.flags.DEFINE_integer("dia_max_len", 10, """""")
 tf.flags.DEFINE_integer("sen_max_len", 60, """""")
 tf.flags.DEFINE_integer("candidate_num", 300,
@@ -49,6 +50,7 @@ tf.flags.DEFINE_integer("unk", 8602, """""")
 
 tf.flags.DEFINE_float("grad_clip", 5.0, """""")
 tf.flags.DEFINE_float("learning_rate", 0.001, """""")
+tf.flags.DEFINE_float("penalty_factor", 0.6, """""")
 tf.flags.DEFINE_integer("epoch", 1, """""")
 
 tf.flags.DEFINE_string("weight_path", "./data/corpus1/weight.save", """""")
@@ -56,24 +58,6 @@ tf.flags.DEFINE_string("weight_path", "./data/corpus1/weight.save", """""")
 
 from models import model_bi_gate
 # TODO: highway, dropout
-
-
-def average_gradients(tower_grads):
-    average_grads = []
-    for grad_and_vars in zip(*tower_grads):
-        # Note that each grad_and_vars looks like the following:
-        #   ((grad0_gpu0, var0_gpu0), ... , (grad0_gpuN, var0_gpuN))
-        grads = [g for g, _ in grad_and_vars]
-        # Average over the 'tower' dimension.
-        grad = tf.stack(grads, 0)
-        grad = tf.reduce_mean(grad, 0)
-        # Keep in mind that the Variables are redundant because they are shared
-        # across towers. So .. we will just return the first tower's pointer to
-        # the Variable.
-        v = grad_and_vars[0][1]
-        grad_and_var = (grad, v)
-        average_grads.append(grad_and_var)
-    return average_grads
 
 
 def main_simple():
@@ -115,27 +99,21 @@ def main_simple():
             tf.logging.warning("NO WEIGHT FILE, INIT FROM BEGINNING...")
 
         tf.logging.info("STEP2: Training...")
-        losses = []
         count = 0
         for _ in range(FLAGS.epoch):
-            while True:
+                # while True:
                 try:
                     batch = []
                     for j in range(FLAGS.batch_size):
                         line = f.readline()[:-1]
                         batch.append(json.loads(line))
                 except:
-                    tf.logging.info("============================================================")
-                    tf.logging.info("avg loss: " + str(np.mean(losses)))
-                    model.save_weight(sess)
                     f.seek(0)
-                    count = 0
-                    losses = []
                     break
 
-                # count += 1
-                # if count % 50 == 0:
-                #     model.save_weight(sess)
+                count += 1
+                if count == 2:
+                    break
 
                 feed_dict = {}
                 src_dialogue = np.transpose([sample["src_dialogue"] for sample in batch], [1, 2, 0])
@@ -145,18 +123,16 @@ def main_simple():
                 feed_dict[s_m] = src_mask
 
                 outputs = sess.run([prob, pred], feed_dict=feed_dict)
-                pred_tgt = outputs[0]
+                # pred_tgt = outputs[0]
 
                 tf.logging.info("---------------------src-------------------")
                 print src_dialogue
                 tf.logging.info("---------------------tgt-------------------")
                 print tgt_dialogue
                 tf.logging.info("---------------------pred-------------------")
-                print pred_tgt
-                f.seek(0)
+                print outputs[0]
+                print outputs[1]
                 break
-
-        # model.save_weight(sess)
 
 
 if __name__ == "__main__":

@@ -106,12 +106,12 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
         return src_dialogue, src_mask, prob, pred
 
     def _test_step(self, src_index, src_mask, hred_cell_tm1):
-        turn_mask = tf.ones([FLAGS.beam_size, 1])
+        turn_mask = tf.ones([1, 1])
         src_emb = tf.nn.embedding_lookup(self.embedding, tf.to_int32(src_index))
 
         src_utterance = self.encoder.forward(src_emb, src_mask)[-1]
-        relevanct_score = tf.zeros([FLAGS.beam_size, FLAGS.candidate_num])
-        weighted_sum_content = tf.zeros([FLAGS.beam_size, self.hyper_params["emb_dim"]])
+        relevanct_score = tf.zeros([1, FLAGS.candidate_num])
+        weighted_sum_content = tf.zeros([1, self.hyper_params["emb_dim"]])
         tgt_utterance, hred_memory = self.hred.lstm.step_with_content(
             src_utterance, turn_mask, weighted_sum_content, hred_cell_tm1)
         prob, pred = self.decoder.forward_with_beam(
