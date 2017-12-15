@@ -154,7 +154,7 @@ class Decoder(graph_base.GraphBase):
 
     def _init_with_beam(self, utterance, weighted_sum_content, relevant_score, knowledge_embedding, size=1):
         tgt_start_token = tf.expand_dims(tf.ones(shape=[1], dtype=tf.int32) * FLAGS.start_token, -1)
-        tgt_start_emb = tf.nn.embedding_lookup(knowledge_embedding, tgt_start_token)
+        tgt_start_emb = tf.reshape(tf.nn.embedding_lookup(knowledge_embedding, tgt_start_token), [1, -1])
         score_tm1 = tf.nn.softmax(relevant_score)
         tgt_start_mask = tf.ones([1])
 
@@ -174,7 +174,7 @@ class Decoder(graph_base.GraphBase):
         prob_top_k, x_top_k = tf.nn.top_k(tf.squeeze(prob), k=FLAGS.beam_size, sorted=True)
         init_x_pred = tf.expand_dims(x_top_k, -1)
         init_finished_mask = tf.to_float(tf.equal(init_x_pred, tf.ones([size, 1], dtype=tf.int32) * FLAGS.end_token))
-        init_finished_len = tf.ones([size, 1]) * 2
+        init_finished_len = tf.ones([FLAGS.beam_size, 1]) * 2
         init_score_cells = tf.tile(tf.stack(score_cell_ts), [1, 1, FLAGS.beam_size, 1])
         init_gen_cells = tf.tile(tf.stack(gen_cell_ts), [1, 1, FLAGS.beam_size, 1])
         init_utterance = tf.tile(utterance, [FLAGS.beam_size, 1])
