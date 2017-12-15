@@ -452,3 +452,108 @@ class Decoder(graph_base.GraphBase):
         elif self.hyper_params["decoder_type"] == "JOINT":
             return joint_score_unit, gen_unit, latent_unit, predict_unit
         raise KeyError
+
+
+class AuxDecoder(graph_base.GraphBase):
+    def __init__(self, gen_params, hyper_params=None, params=None):
+        graph_base.GraphBase.__init__(self, hyper_params, params)
+
+        self.hyper_params["gen_nn_layer_num"] = gen_params[0]
+        self.hyper_params["gen_nn_in_dim"] = gen_params[1]
+        self.hyper_params["gen_nn_h_dim"] = gen_params[2]
+        self.hyper_params["gen_nn_c_dim"] = gen_params[3]
+        self.hyper_params["gen_nn_o_dim"] = gen_params[4]
+
+        self.gen_unit = self.create_unit()
+
+    def forward(self, x_emb, x_m,
+                utterance, size=FLAGS.batch_size):
+        """
+        forward with golden including start and end token
+        :param x_emb: max_len * size * e_dim
+        :param x_m: max_len * size * 1
+        :param utterance: size * hred_h_dim
+        :return: max_len * size * vocab_size(with start_token pre written)
+        """
+        x_emb_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).unstack(x_emb)
+        x_m_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).unstack(x_m)
+        prob_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+        tgt_start_token = tf.one_hot(tf.ones([size], dtype=tf.int32) * FLAGS.start_token,
+                                     FLAGS.common_vocab + FLAGS.candidate_num, 1.0, 0.0)
+        prob_ta = prob_ta.write(0, tgt_start_token)
+
+        _, _, _, _, _, prob_ta, _ = control_flow_ops.while_loop(
+            cond=lambda i, _1, _2, _3, _4, _5, _6: i < x_emb_ta.size()-1,
+            body=self._step,
+            loop_vars=(
+                tf.constant(0, dtype=tf.int32),
+                tf.stack([[tf.zeros([size, self.hyper_params["gen_nn_h_dim"]]),
+                           tf.zeros([size, self.hyper_params["gen_nn_h_dim"]])]
+                          for _ in range(self.hyper_params["gen_nn_layer_num"])]),
+                utterance, x_emb_ta, x_m_ta, prob_ta, size
+            )
+        )
+
+        prob_ta = prob_ta.stack()
+        return prob_ta
+
+    def _step(self, i, gen_cell_tm1,
+              utterance,
+              x_emb_ta, x_m_ta, prob_ta,
+              size=FLAGS.batch_size):
+        """
+        step with golden
+        :param gen_cell_tm1: gen hidden with memory in layer_num * 2 * size * h_dim
+        :param utterance: size * encoder_h_dim
+        """
+        x_emb_t = x_emb_ta.read(i)
+        x_m_t = x_m_ta.read(i)
+
+        gen_cell_ts, gen_logits = self.gen_unit(x_emb_t, x_m_t, utterance, gen_cell_tm1)
+        prob_ta = prob_ta.write(i+1, gen_logits)
+
+        gen_cell_ts = tf.reshape(tf.stack(gen_cell_ts), [self.hyper_params["gen_nn_layer_num"], 2,
+                                                         FLAGS.batch_size, self.hyper_params["gen_nn_h_dim"]])
+
+        return i+1, gen_cell_ts, \
+               utterance, \
+               x_emb_ta, x_m_ta, prob_ta, size
+
+    def create_unit(self):
+        # gen lstm
+        self.gen_lstms = []
+        for i in range(self.hyper_params["gen_nn_layer_num"]):
+            if i == 0:
+                lstm = graph_base.LSTM(
+                    self.hyper_params["gen_nn_in_dim"], self.hyper_params["gen_nn_h_dim"],
+                    self.hyper_params["gen_nn_c_dim"])
+            else:
+                lstm = graph_base.LSTM(
+                    self.hyper_params["gen_nn_h_dim"], self.hyper_params["gen_nn_h_dim"],
+                    self.hyper_params["gen_nn_c_dim"])
+            self.gen_lstms.append(lstm)
+            self.params.extend(lstm.params)
+        self.w_gen_lr = graph_base.get_params([self.hyper_params["gen_nn_h_dim"], self.hyper_params["gen_nn_o_dim"]])
+        self.b_gen_lr = graph_base.get_params([self.hyper_params["gen_nn_o_dim"]])
+        self.params.extend([self.w_gen_lr, self.b_gen_lr])
+
+        def gen_unit(x, x_mask, content, cell_tm1s):
+            """
+            common word prob generate
+            :param x: input for first layer in size * in_dim
+            :param x_mask: mask in size * 1
+            :param cell_tm1s: hidden with memory for each layer in layer_num * size * h_dim
+            :return: hidden with memory in layer_num * [size * h_dim], word softmax in size * common_vocab
+            """
+            hidden_t = x
+            cell_ts = []
+            cell_tm1s = [tf.unstack(cell) for cell in tf.unstack(cell_tm1s)]
+            for i in range(self.hyper_params["gen_nn_layer_num"]):
+                lstm = self.gen_lstms[i]
+                cell_tm1 = cell_tm1s[i]
+
+                hidden_t, memory_t = lstm.step_with_content(hidden_t, x_mask, content, cell_tm1)
+                cell_ts.append([hidden_t, memory_t])
+            gen_logits = tf.nn.softmax(tf.matmul(hidden_t, self.w_gen_lr) + self.b_gen_lr)
+            return cell_ts, gen_logits
+        return gen_unit

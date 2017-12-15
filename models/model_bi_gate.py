@@ -47,11 +47,17 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
                  self.hyper_params["decoder_mlp_h_dim"], 2],
             d_type="MASK", hyper_params=None, params=None)
 
+        self.aux_decoder = decoder.AuxDecoder(
+            [self.hyper_params["decoder_gen_layer_num"], self.hyper_params["emb_dim"],
+             self.hyper_params["decoder_gen_h_dim"], self.hyper_params["encoder_h_dim"],
+             FLAGS.common_vocab + FLAGS.candidate_num])
+
         self.print_params()
         self.encoder.print_params()
         self.kb_scorer.print_params()
         self.hred.print_params()
         self.decoder.print_params()
+        self.aux_decoder.print_params()
 
         self.params = [self.embedding] + self.encoder.params + self.kb_scorer.params + \
                        self.hred.params + self.decoder.params
@@ -62,7 +68,8 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
 
         self.optimizer = self.get_optimizer()
 
-        self.params_simple = [self.embedding] + self.encoder.params + self.hred.params + self.decoder.params
+        self.params_simple = [self.embedding] + self.encoder.params + self.hred.params + \
+                            self.decoder.params + self.aux_decoder.params
 
     def build_tower(self):
         # placeholder
@@ -78,17 +85,21 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
         # candidates = tf.placeholder(dtype=tf.float32, shape=[
         #     FLAGS.dia_max_len, FLAGS.batch_size, FLAGS.candidate_num, 2])
 
-        prob_simple = self.train_forward_simple(src_dialogue, tgt_dialogue,
-                                                turn_mask, src_mask, tgt_mask)
+        prob_simple, aux_prob_simple = self.train_forward_simple(src_dialogue, tgt_dialogue,
+                                                                 turn_mask, src_mask, tgt_mask)
         train_loss_simple = -tf.reduce_mean(
             tf.reduce_sum(tf.reduce_sum(
                 tf.one_hot(tf.to_int32(tgt_dialogue), FLAGS.common_vocab + FLAGS.candidate_num, 1.0, 0.0) *
                 tf.log(tf.clip_by_value(prob_simple, 1e-20, 1.0)), -1) * tgt_mask, [0, 1])
         )
-        # train_grad_simple = tf.clip_by_global_norm(self.optimizer.compute_gradients(train_loss_simple),
-        #                                            FLAGS.grad_clip)
-        train_grad_simple = self.optimizer.compute_gradients(train_loss_simple, self.params_simple)
-        # train_update_simple = self.optimizer.apply_gradients(zip(train_grad_simple, self.params_simple))
+        aux_loss_simple = -tf.reduce_mean(
+            tf.reduce_sum(tf.reduce_sum(
+                tf.one_hot(tf.to_int32(src_dialogue), FLAGS.common_vocab + FLAGS.candidate_num, 1.0, 0.0) *
+                tf.log(tf.clip_by_value(aux_prob_simple, 1e-20, 1.0)), -1) * src_mask, [0, 1])
+        )
+        total_loss = FLAGS.aux_weight * aux_loss_simple + (1. - FLAGS.aux_weight) * train_loss_simple
+        train_grad_simple = self.optimizer.compute_gradients(total_loss, self.params_simple)
+
         return src_dialogue, tgt_dialogue, turn_mask, src_mask, tgt_mask, \
                train_loss_simple, train_grad_simple
 
@@ -128,21 +139,22 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
         src_mask_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).unstack(src_mask)
         tgt_mask_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).unstack(tgt_mask)
         prob_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+        aux_prob_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
 
-        _, _, _, _, _, _, prob_ta, _ = control_flow_ops.while_loop(
-            cond=lambda i, _1, _2, _3, _4, _5, _6, _7: i < src_index_ta.size(),
+        _, _, _, _, _, _, prob_ta, aux_prob_ta, _ = control_flow_ops.while_loop(
+            cond=lambda i, _1, _2, _3, _4, _5, _6, _7, _8: i < src_index_ta.size(),
             body=self._train_step_simple,
             loop_vars=(
                 tf.constant(0, tf.int32),
-                src_index_ta, tgt_index_ta, turn_mask_ta, src_mask_ta, tgt_mask_ta, prob_ta,
+                src_index_ta, tgt_index_ta, turn_mask_ta, src_mask_ta, tgt_mask_ta, prob_ta, aux_prob_ta,
                 [tf.zeros([FLAGS.batch_size, self.hyper_params["hred_h_dim"]]),
                  tf.zeros([FLAGS.batch_size, self.hyper_params["hred_h_dim"]])],
             )
         )
-        return prob_ta.stack()
+        return prob_ta.stack(), aux_prob_ta.stack()
 
     def _train_step_simple(self, i,
-                           src_index_ta, tgt_index_ta, turn_mask_ta, src_mask_ta, tgt_mask_ta, prob_ta,
+                           src_index_ta, tgt_index_ta, turn_mask_ta, src_mask_ta, tgt_mask_ta, prob_ta, aux_prob_ta,
                            hred_cell_tm1):
         src_index = src_index_ta.read(i)
         tgt_index = tgt_index_ta.read(i)
@@ -162,9 +174,12 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
         prob = self.decoder.forward(tf.expand_dims(tgt_index, -1),
                                     tgt_emb, tf.expand_dims(tgt_mask, -1),
                                     tgt_utterance, weighted_sum_content, relevant_score)
-        prob_ta = prob_ta.write(i, prob)
 
-        return i+1, src_index_ta, tgt_index_ta, turn_mask_ta, src_mask_ta, tgt_mask_ta, prob_ta, \
+        aux_prob = self.aux_decoder.forward(src_emb, tf.expand_dims(src_mask, -1), src_utterance)
+        prob_ta = prob_ta.write(i, prob)
+        aux_prob_ta = aux_prob_ta.write(i, aux_prob)
+
+        return i+1, src_index_ta, tgt_index_ta, turn_mask_ta, src_mask_ta, tgt_mask_ta, prob_ta, aux_prob_ta, \
                [tgt_utterance, hred_memory]
 
     def get_optimizer(self, *args, **kwargs):

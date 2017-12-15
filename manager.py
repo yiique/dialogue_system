@@ -50,6 +50,7 @@ tf.flags.DEFINE_integer("unk", 8602, """""")
 tf.flags.DEFINE_float("grad_clip", 5.0, """""")
 tf.flags.DEFINE_float("learning_rate", 0.001, """""")
 tf.flags.DEFINE_float("penalty_factor", 0.6, """""")
+tf.flags.DEFINE_float("aux_weight", 0.2, """""")
 tf.flags.DEFINE_integer("epoch", 5, """""")
 
 tf.flags.DEFINE_string("weight_path", "./data/corpus1/weight.save", """""")
