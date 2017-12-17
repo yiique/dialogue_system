@@ -60,6 +60,8 @@ HYPER_PARAMS = {
     "encoder_h_dim": 512,
     "decoder_gen_layer_num": 1,
     "decoder_gen_h_dim": 512,
+    "decoder_mlp_h_layer_num": 3,
+    "decoder_mlp_h_dim": 512
 }
 
 
@@ -73,21 +75,26 @@ class TestModel(graph_base.GraphBase):
         tf.logging.info("============================================================")
         tf.logging.info("BUILDING NETWORK...")
 
-        self.hyper_params["model_type"] = "Test Autoencoder"
+        self.hyper_params["model_type"] = "Test BeamDecoder"
         self.embedding = graph_base.get_params([self.hyper_params["common_vocab"] + self.hyper_params["kb_vocab"],
                                                 self.hyper_params["emb_dim"]])
         self.encoder = encoder.Encoder(
             self.hyper_params["encoder_layer_num"], self.hyper_params["emb_dim"], self.hyper_params["encoder_h_dim"])
-        self.aux_decoder = decoder.AuxDecoder(
+        self.decoder = decoder.Decoder(
             [self.hyper_params["decoder_gen_layer_num"], self.hyper_params["emb_dim"],
-             self.hyper_params["decoder_gen_h_dim"], self.hyper_params["encoder_h_dim"],
-             FLAGS.common_vocab + FLAGS.candidate_num])
+             self.hyper_params["decoder_gen_h_dim"], self.hyper_params["encoder_h_dim"] + FLAGS.candidate_num,
+             self.hyper_params["common_vocab"]],
+            [], [self.hyper_params["decoder_mlp_layer_num"],
+                 self.hyper_params["emb_dim"] + FLAGS.candidate_num * 2 +
+                 self.hyper_params["encoder_h_dim"] + self.hyper_params["decoder_gen_h_dim"],
+                 self.hyper_params["decoder_mlp_h_dim"], 2],
+            d_type="MASK", hyper_params=None, params=None)
 
         self.print_params()
         self.encoder.print_params()
-        self.aux_decoder.print_params()
+        self.decoder.print_params()
 
-        self.params = [self.embedding] + self.encoder.params + self.aux_decoder.params
+        self.params = [self.embedding] + self.encoder.params + self.decoder.params
         params_dict = {}
         for i in range(0, len(self.params)):
             params_dict[str(i)] = self.params[i]
@@ -95,7 +102,7 @@ class TestModel(graph_base.GraphBase):
 
         self.optimizer = self.get_optimizer()
 
-        self.params_simple = [self.embedding] + self.encoder.params + self.aux_decoder.params
+        self.params_simple = [self.embedding] + self.encoder.params + self.decoder.params
 
     def build_tower(self):
         # placeholder
@@ -146,7 +153,10 @@ class TestModel(graph_base.GraphBase):
         tgt_emb = tf.nn.embedding_lookup(self.embedding, tf.to_int32(tgt_index))
 
         src_utterance = self.encoder.forward(src_emb, src_mask)[-1]
-        prob = self.aux_decoder.forward(tgt_emb, tf.expand_dims(tgt_mask, -1), src_utterance)
+        relevanct_score = tf.zeros([1, FLAGS.candidate_num])
+        weighted_sum_content = tf.zeros([1, self.hyper_params["emb_dim"]])
+        prob = self.decoder.forward(tgt_index, tgt_emb, tf.expand_dims(tgt_mask, -1),
+                                    src_utterance, weighted_sum_content, relevanct_score)
 
         prob_ta = prob_ta.write(i, prob)
 
@@ -166,7 +176,10 @@ class TestModel(graph_base.GraphBase):
         src_emb = tf.nn.embedding_lookup(self.embedding, tf.to_int32(src_index))
 
         src_utterance = self.encoder.forward(src_emb, src_mask)[-1]
-        prob, pred = self.aux_decoder.test_forward(src_utterance, self.embedding)
+        relevanct_score = tf.zeros([1, FLAGS.candidate_num])
+        weighted_sum_content = tf.zeros([1, self.hyper_params["emb_dim"]])
+        prob, pred = self.decoder.forward_with_beam(src_utterance, weighted_sum_content, relevanct_score, 
+                                                    self.embedding)
         return prob, pred
 
     def get_optimizer(self, *args, **kwargs):
