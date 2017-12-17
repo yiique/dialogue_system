@@ -13,7 +13,7 @@ def set_params(value):
     return tf.Variable(value)
 
 
-def get_params(shape, scale=0.01):
+def get_params(shape, scale=0.1):
     return tf.Variable(tf.random_normal(shape, stddev=scale))
 
 

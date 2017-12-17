@@ -519,6 +519,37 @@ class AuxDecoder(graph_base.GraphBase):
                utterance, \
                x_emb_ta, x_m_ta, prob_ta, size
 
+    def test_forward(self, utterance, embedding, size=FLAGS.batch_size):
+        prob_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+        pred_ta = tensor_array_ops.TensorArray(dtype=tf.int32, size=0, dynamic_size=True)
+        tgt_start_token = tf.ones([size, 1], dtype=tf.int32) * FLAGS.start_token
+
+        _, _, _, _, _, prob_ta, pred_ta, _ = control_flow_ops.while_loop(
+            cond=lambda i, _1, _2, _3, _4, _5, _6, _7: i < FLAGS.sen_max_len-1,
+            body=self._test_step,
+            loop_vars=(
+                tf.constant(0, dtype=tf.int32), tgt_start_token,
+                tf.stack([[tf.zeros([size, self.hyper_params["gen_nn_h_dim"]]),
+                           tf.zeros([size, self.hyper_params["gen_nn_h_dim"]])]
+                          for _ in range(self.hyper_params["gen_nn_layer_num"])]),
+                utterance, embedding, prob_ta, pred_ta, size
+            )
+        )
+        return prob_ta.stack(), pred_ta()
+
+    def _test_step(self, i, x_pred, gen_cell_tm1,
+                   utterance, embedding, prob_ta, pred_ta,
+                   size=FLAGS.batch_size):
+        x_emb_t = tf.nn.embedding_lookup(embedding, x_pred)
+        x_m = tf.ones([size, 1])
+
+        gen_cell_ts, gen_logits = self.gen_unit(x_emb_t, x_m, utterance, gen_cell_tm1)
+        gen_pred = tf.arg_max(gen_logits, 1)
+        prob_ta = prob_ta.write(i+1, gen_logits)
+        pred_ta = pred_ta.write(i+1, gen_pred)
+
+        return i+1, gen_pred, gen_cell_ts, utterance, embedding, prob_ta, pred_ta, size
+
     def create_unit(self):
         # gen lstm
         self.gen_lstms = []
