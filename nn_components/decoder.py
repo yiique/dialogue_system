@@ -113,7 +113,7 @@ class Decoder(graph_base.GraphBase):
 
         score_logits, score_cell_ts, gen_cell_ts, prob = self._loop_body(
             x_pred_t, x_emb_t, score_tm1, score_cell_tm1, gen_cell_tm1,
-            utterance, weighted_sum_content, relevant_score, x_m_t, size)
+            utterance, weighted_sum_content, relevant_score, 1. - x_m_t, size)
         prob_ta = prob_ta.write(i+1, prob)
 
         score_logits = tf.reshape(score_logits, [FLAGS.batch_size, FLAGS.candidate_num])
@@ -167,7 +167,7 @@ class Decoder(graph_base.GraphBase):
 
         score_logits, score_cell_ts, gen_cell_ts, prob = self._loop_body(
             tgt_start_token, tgt_start_emb, score_tm1, score_cell_tm1, gen_cell_tm1,
-            utterance, weighted_sum_content, relevant_score, tgt_start_mask, size
+            utterance, weighted_sum_content, relevant_score, 1. - tgt_start_mask, size
         )
 
         init_score = tf.tile(score_logits, [FLAGS.beam_size, 1])

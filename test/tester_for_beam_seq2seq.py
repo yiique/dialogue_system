@@ -23,7 +23,7 @@ FLAGS = tf.flags.FLAGS
 
 tf.flags.DEFINE_integer("GPU_num", 4, """""")
 
-tf.flags.DEFINE_integer("batch_size", 1, """""")
+tf.flags.DEFINE_integer("batch_size", 40, """""")
 tf.flags.DEFINE_integer("beam_size", 10, """""")
 tf.flags.DEFINE_integer("dia_max_len", 10, """""")
 tf.flags.DEFINE_integer("sen_max_len", 60, """""")
@@ -39,8 +39,9 @@ tf.flags.DEFINE_integer("end_token", 8600, """""")
 tf.flags.DEFINE_integer("unk", 8602, """""")
 
 tf.flags.DEFINE_float("grad_clip", 5.0, """""")
-tf.flags.DEFINE_float("learning_rate", 0.01, """""")
-tf.flags.DEFINE_integer("epoch", 300, """""")
+tf.flags.DEFINE_float("learning_rate", 0.001, """""")
+tf.flags.DEFINE_float("penalty_factor", 0.6, """""")
+tf.flags.DEFINE_integer("epoch", 200, """""")
 
 tf.flags.DEFINE_string("weight_path", "./../data/corpus1/weight.test", """""")
 
@@ -60,7 +61,7 @@ HYPER_PARAMS = {
     "encoder_h_dim": 512,
     "decoder_gen_layer_num": 1,
     "decoder_gen_h_dim": 512,
-    "decoder_mlp_h_layer_num": 3,
+    "decoder_mlp_layer_num": 3,
     "decoder_mlp_h_dim": 512
 }
 
@@ -153,8 +154,8 @@ class TestModel(graph_base.GraphBase):
         tgt_emb = tf.nn.embedding_lookup(self.embedding, tf.to_int32(tgt_index))
 
         src_utterance = self.encoder.forward(src_emb, src_mask)[-1]
-        relevanct_score = tf.zeros([1, FLAGS.candidate_num])
-        weighted_sum_content = tf.zeros([1, self.hyper_params["emb_dim"]])
+        relevanct_score = tf.zeros([FLAGS.batch_size, FLAGS.candidate_num])
+        weighted_sum_content = tf.zeros([FLAGS.batch_size, self.hyper_params["emb_dim"]])
         prob = self.decoder.forward(tgt_index, tgt_emb, tf.expand_dims(tgt_mask, -1),
                                     src_utterance, weighted_sum_content, relevanct_score)
 
@@ -165,9 +166,9 @@ class TestModel(graph_base.GraphBase):
     def build_eval(self):
         # placeholder
         src_dialogue = tf.placeholder(dtype=tf.float32, shape=[
-            FLAGS.dia_max_len, FLAGS.sen_max_len, FLAGS.batch_size])
+            FLAGS.dia_max_len, FLAGS.sen_max_len, 1])
         src_mask = tf.placeholder(dtype=tf.float32, shape=[
-            FLAGS.dia_max_len, FLAGS.sen_max_len, FLAGS.batch_size])
+            FLAGS.dia_max_len, FLAGS.sen_max_len, 1])
         prob, pred = self._test_step(
             tf.unstack(src_dialogue)[0], tf.unstack(src_mask)[0])
         return src_dialogue, src_mask, prob, pred
@@ -175,10 +176,10 @@ class TestModel(graph_base.GraphBase):
     def _test_step(self, src_index, src_mask):
         src_emb = tf.nn.embedding_lookup(self.embedding, tf.to_int32(src_index))
 
-        src_utterance = self.encoder.forward(src_emb, src_mask)[-1]
+        src_utterance = self.encoder.forward(src_emb, src_mask, 1)[-1]
         relevanct_score = tf.zeros([1, FLAGS.candidate_num])
         weighted_sum_content = tf.zeros([1, self.hyper_params["emb_dim"]])
-        prob, pred = self.decoder.forward_with_beam(src_utterance, weighted_sum_content, relevanct_score, 
+        prob, pred = self.decoder.forward_with_beam(src_utterance, weighted_sum_content, relevanct_score,
                                                     self.embedding)
         return prob, pred
 
@@ -281,7 +282,7 @@ def main():
         for _ in range(0, stop_control-1):
             try:
                 batch = []
-                for j in range(FLAGS.batch_size):
+                for j in range(1):
                     line = f.readline()[:-1]
                     batch.append(json.loads(line))
             except:
