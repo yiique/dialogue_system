@@ -12,11 +12,6 @@ import time
 
 from tensorflow.python.ops import tensor_array_ops, control_flow_ops
 
-sys.path.append("..")
-from nn_components import graph_base
-from nn_components import encoder
-from nn_components import decoder
-
 
 SEED = 88
 
@@ -47,7 +42,13 @@ tf.flags.DEFINE_float("grad_clip", 5.0, """""")
 tf.flags.DEFINE_float("learning_rate", 0.01, """""")
 tf.flags.DEFINE_integer("epoch", 300, """""")
 
-tf.flags.DEFINE_string("weight_path", "./data/corpus1/weight.test", """""")
+tf.flags.DEFINE_string("weight_path", "./../data/corpus1/weight.test", """""")
+
+
+sys.path.append("..")
+from nn_components import graph_base
+from nn_components import encoder
+from nn_components import decoder
 
 
 HYPER_PARAMS = {
@@ -182,7 +183,7 @@ def main():
     np.random.seed(SEED)
 
     tf.logging.info("STEP1: Init...")
-    f = open("./data/corpus1/mul_dia.index", 'r')
+    f = open("./../data/corpus1/mul_dia.index", 'r')
 
     with tf.device('/gpu:0'):
         model = TestModel(hyper_params=HYPER_PARAMS)
@@ -206,7 +207,7 @@ def main():
         tf.logging.info("STEP2: Training...")
         losses = []
         count = 0
-        for _ in range(FLAGS.epoch):
+        for _ in range(0, FLAGS.epoch):
             while True:
                 try:
                     batch = []
@@ -249,7 +250,7 @@ def main():
 
         tf.logging.info("STEP3: Evaluating...")
         count = 0
-        for _ in range(stop_control):
+        for _ in range(0, stop_control):
             try:
                 batch = []
                 for j in range(FLAGS.batch_size):
@@ -258,21 +259,23 @@ def main():
             except:
                 tf.logging.ERROR("TESTING LOADING ERROR!")
 
-                count += 1
+            count += 1
 
-                feed_dict = {}
-                src_dialogue = np.transpose([sample["src_dialogue"] for sample in batch], [1, 2, 0])
-                src_mask = np.transpose([sample["src_mask"] for sample in batch], [1, 2, 0])
-                feed_dict[t_sd] = src_dialogue
-                feed_dict[t_sm] = src_mask
+            feed_dict = {}
+            src_dialogue = np.transpose([sample["src_dialogue"] for sample in batch], [1, 2, 0])
+            src_mask = np.transpose([sample["src_mask"] for sample in batch], [1, 2, 0])
+            feed_dict[t_sd] = src_dialogue
+            feed_dict[t_sm] = src_mask
 
-                outputs = sess.run([prob, pred], feed_dict=feed_dict)
+            outputs = sess.run([prob, pred], feed_dict=feed_dict)
 
-                tf.logging.info("---------------------count-------------------")
-                tf.logging.info(str(_) + "-" + str(count) + "    " + time.ctime())
-                tf.logging.info("---------------------pred-------------------")
-                tf.logging.info(outputs[0])
-                tf.logging.info(outputs[1])
+            tf.logging.info("---------------------count-------------------")
+            tf.logging.info(str(_) + "-" + str(count) + "    " + time.ctime())
+            tf.logging.info("---------------------src-------------------")
+            tf.logging.info(src_dialogue)
+            tf.logging.info("---------------------pred-------------------")
+            tf.logging.info(outputs[0])
+            tf.logging.info(outputs[1])
 
 
 if __name__ == "__main__":
