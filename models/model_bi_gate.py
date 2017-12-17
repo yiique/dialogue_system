@@ -106,9 +106,9 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
     def build_eval(self):
         # placeholder
         src_dialogue = tf.placeholder(dtype=tf.float32, shape=[
-            FLAGS.dia_max_len, FLAGS.sen_max_len, FLAGS.batch_size])
+            FLAGS.dia_max_len, FLAGS.sen_max_len, 1])
         src_mask = tf.placeholder(dtype=tf.float32, shape=[
-            FLAGS.dia_max_len, FLAGS.sen_max_len, FLAGS.batch_size])
+            FLAGS.dia_max_len, FLAGS.sen_max_len, 1])
         prob, pred = self._test_step(
             tf.unstack(src_dialogue)[0], tf.unstack(src_mask)[0],
             [tf.zeros([FLAGS.batch_size, self.hyper_params["hred_h_dim"]]),
