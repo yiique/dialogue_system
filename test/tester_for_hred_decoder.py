@@ -135,7 +135,7 @@ class TestModel(graph_base.GraphBase):
         )
         train_grad_simple = self.optimizer.compute_gradients(train_loss_simple, self.params_simple)
 
-        return src_dialogue, src_mask, tgt_dialogue, tgt_mask, train_loss_simple, train_grad_simple
+        return src_dialogue, src_mask, turn_mask, tgt_dialogue, tgt_mask, train_loss_simple, train_grad_simple
 
     def train_forward_simple(self, src_dialogue, src_mask, turn_mask, tgt_dialogue, tgt_mask):
         src_index_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).\
@@ -195,8 +195,8 @@ class TestModel(graph_base.GraphBase):
             FLAGS.dia_max_len, FLAGS.sen_max_len, 1])
         prob, pred = self._test_step(
             tf.unstack(src_dialogue)[0], tf.unstack(src_mask)[0],
-            [tf.zeros([FLAGS.batch_size, self.hyper_params["hred_h_dim"]]),
-             tf.zeros([FLAGS.batch_size, self.hyper_params["hred_h_dim"]])]
+            [tf.zeros([1, self.hyper_params["hred_h_dim"]]),
+             tf.zeros([1, self.hyper_params["hred_h_dim"]])]
         )
         return src_dialogue, src_mask, prob, pred
 
@@ -204,7 +204,7 @@ class TestModel(graph_base.GraphBase):
         turn_mask = tf.ones([1, 1])
         src_emb = tf.nn.embedding_lookup(self.embedding, tf.to_int32(src_index))
 
-        src_utterance = self.encoder.forward(src_emb, src_mask)[-1]
+        src_utterance = self.encoder.forward(src_emb, src_mask, 1)[-1]
         relevanct_score = tf.zeros([1, FLAGS.candidate_num])
         weighted_sum_content = tf.zeros([1, self.hyper_params["emb_dim"]])
         tgt_utterance, hred_memory = self.hred.lstm.step_with_content(
@@ -242,7 +242,7 @@ def main():
 
     with tf.device('/gpu:0'):
         model = TestModel(hyper_params=HYPER_PARAMS)
-        s_d, s_m, t_d, t_m, loss, grad = model.build_tower()
+        s_d, s_m, turn_m, t_d, t_m, loss, grad = model.build_tower()
         update = model.optimizer.apply_gradients(grad)
 
         t_sd, t_sm, prob, pred = model.build_eval()
@@ -291,8 +291,10 @@ def main():
                 src_mask = np.transpose([sample["src_mask"] for sample in batch], [1, 2, 0])
                 tgt_dialogue = np.transpose([sample["tgt_dialogue"] for sample in batch], [1, 2, 0])
                 tgt_mask = np.transpose([sample["tgt_mask"] for sample in batch], [1, 2, 0])
+                turn_mask = np.transpose([sample["turn_mask"] for sample in batch], [1, 0])
                 feed_dict[s_d] = src_dialogue
                 feed_dict[s_m] = src_mask
+                feed_dict[turn_m] = turn_mask
                 feed_dict[t_d] = tgt_dialogue
                 feed_dict[t_m] = tgt_mask
 
