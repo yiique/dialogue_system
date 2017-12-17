@@ -33,7 +33,7 @@ FLAGS = tf.flags.FLAGS
 tf.flags.DEFINE_integer("GPU_num", 4, """""")
 
 tf.flags.DEFINE_integer("batch_size", 40, """""")
-tf.flags.DEFINE_integer("beam_size", 1, """""")
+tf.flags.DEFINE_integer("beam_size", 10, """""")
 tf.flags.DEFINE_integer("dia_max_len", 10, """""")
 tf.flags.DEFINE_integer("sen_max_len", 60, """""")
 tf.flags.DEFINE_integer("candidate_num", 300,
@@ -51,7 +51,7 @@ tf.flags.DEFINE_float("grad_clip", 5.0, """""")
 tf.flags.DEFINE_float("learning_rate", 0.001, """""")
 tf.flags.DEFINE_float("penalty_factor", 0.6, """""")
 tf.flags.DEFINE_float("aux_weight", 0.2, """""")
-tf.flags.DEFINE_integer("epoch", 100, """""")
+tf.flags.DEFINE_integer("epoch", 10, """""")
 
 tf.flags.DEFINE_string("weight_path", "./data/corpus1/weight.save", """""")
 
@@ -135,7 +135,7 @@ def main_simple():
         tf.logging.info("STEP3: Training...")
         losses = []
         count = 0
-        stop_control = 2
+        stop_control = 200000
         for ep in range(FLAGS.epoch):
             while True:
                 try:
@@ -171,9 +171,9 @@ def main_simple():
                     src_mask = np.transpose([sample["src_mask"] for sample in batches[i]], [1, 2, 0])
                     tgt_mask = np.transpose([sample["tgt_mask"] for sample in batches[i]], [1, 2, 0])
                     feed_dict[tower_records[i][0]] = src_dialogue
-                    feed_dict[tower_records[i][1]] = tgt_dialogue
+                    feed_dict[tower_records[i][1]] = src_mask
                     feed_dict[tower_records[i][2]] = turn_mask
-                    feed_dict[tower_records[i][3]] = src_mask
+                    feed_dict[tower_records[i][3]] = tgt_dialogue
                     feed_dict[tower_records[i][4]] = tgt_mask
 
                 outputs = sess.run([avg_loss, tower_losses, update], feed_dict=feed_dict)
