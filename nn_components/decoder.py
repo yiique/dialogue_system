@@ -245,7 +245,7 @@ class Decoder(graph_base.GraphBase):
         loop body for each decoder step
         :param score_cell_tm1: stacked  list for memory
         :param gen_cell_tm1: stacked list for memory
-        :param finished_mask: x_mask
+        :param finished_mask: finished_mark for one sample(should be 1. - x_mask for training)
         :param size: batch_size fore training, beam_size for eval
         """
         # score

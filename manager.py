@@ -157,9 +157,9 @@ def main_simple():
                 if count % 500 == 0:
                     model.save_weight(sess, "." + str(ep) + "-" + str(count))
                 if count == stop_control:
+                    tf.logging.info("==avg: " + str(np.mean(losses)))
                     f.seek(0)
                     count = 0
-                    tf.logging.info("==avg: " + str(np.mean(losses)))
                     losses = []
                     break
 
@@ -185,7 +185,7 @@ def main_simple():
                 tf.logging.info(outputs[1])
                 losses.append(outputs[0])
 
-        model.save_weight(sess)
+            model.save_weight(sess)
 
         tf.logging.info("STEP3: Evaluating...")
         count = 0
