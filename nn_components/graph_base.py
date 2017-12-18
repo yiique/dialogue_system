@@ -13,7 +13,7 @@ def set_params(value):
     return tf.Variable(value)
 
 
-def get_params(shape, scale=0.01):
+def get_params(shape, scale=0.1):
     return tf.Variable(tf.random_normal(shape, stddev=scale))
 
 
@@ -75,7 +75,7 @@ class LSTM(GraphBase):
         return i+1, [h_t, m_t], \
                x_ta, x_mask_ta, hidden_ta
 
-    def forward(self, x, x_mask):
+    def forward(self, x, x_mask, size=FLAGS.batch_size):
         """
         :param x: input matrix in           max_len * batch_size * in_dim
                     with start token and end token
@@ -91,8 +91,8 @@ class LSTM(GraphBase):
             body=self._step,
             loop_vars=(
                 tf.constant(0, dtype=tf.int32),
-                [tf.zeros([FLAGS.batch_size, self.hyper_params["h_dim"]], dtype=tf.float32),
-                 tf.zeros([FLAGS.batch_size, self.hyper_params["h_dim"]], dtype=tf.float32)],
+                [tf.zeros([size, self.hyper_params["h_dim"]], dtype=tf.float32),
+                 tf.zeros([size, self.hyper_params["h_dim"]], dtype=tf.float32)],
                 x_ta, x_mask_ta, hidden_ta
             )
         )

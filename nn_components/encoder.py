@@ -4,6 +4,9 @@ import graph_base
 import tensorflow as tf
 
 
+FLAGS = tf.flags.FLAGS
+
+
 class Encoder(graph_base.GraphBase):
 
     def __init__(self, layer_num, in_dim, h_dim, hyper_params=None, params=None):
@@ -24,7 +27,7 @@ class Encoder(graph_base.GraphBase):
             self.params.extend(llstm.params)
             self.params.extend(rlstm.params)
 
-    def forward(self, x, x_mask):
+    def forward(self, x, x_mask, size=FLAGS.batch_size):
         """
         :param x: input in max_len * batch_size * in_dim
         :param x_mask: mask in max_len * batch_size
@@ -35,8 +38,8 @@ class Encoder(graph_base.GraphBase):
             llstm, rlstm = self.lstms[i]
 
             # TODO: residual didn't add here
-            hidden = llstm.forward(hidden, x_mask)
-            hidden = rlstm.forward(hidden[::-1], x_mask[::-1])
+            hidden = llstm.forward(hidden, x_mask, size)
+            hidden = rlstm.forward(hidden[::-1], x_mask[::-1], size)
 
         return hidden
 
