@@ -9,7 +9,7 @@ FLAGS = tf.flags.FLAGS
 
 class Encoder(graph_base.GraphBase):
 
-    def __init__(self, layer_num, in_dim, h_dim, hyper_params=None, params=None):
+    def __init__(self, layer_num, in_dim, h_dim, norm=False, hyper_params=None, params=None):
         graph_base.GraphBase.__init__(self, hyper_params, params)
 
         self.hyper_params["layer_num"] = layer_num
@@ -19,10 +19,10 @@ class Encoder(graph_base.GraphBase):
         self.lstms = []
         for i in range(self.hyper_params["layer_num"]):
             if i == 0:
-                llstm = graph_base.LSTM(self.hyper_params["in_dim"], self.hyper_params["h_dim"])
+                llstm = graph_base.LSTM(self.hyper_params["in_dim"], self.hyper_params["h_dim"], norm=norm)
             else:
-                llstm = graph_base.LSTM(self.hyper_params["h_dim"], self.hyper_params["h_dim"])
-            rlstm = graph_base.LSTM(self.hyper_params["h_dim"], self.hyper_params["h_dim"])
+                llstm = graph_base.LSTM(self.hyper_params["h_dim"], self.hyper_params["h_dim"], norm=norm)
+            rlstm = graph_base.LSTM(self.hyper_params["h_dim"], self.hyper_params["h_dim"], norm=norm)
             self.lstms.append([llstm, rlstm])
             self.params.extend(llstm.params)
             self.params.extend(rlstm.params)
