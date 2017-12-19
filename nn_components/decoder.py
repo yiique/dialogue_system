@@ -24,6 +24,7 @@ class Decoder(graph_base.GraphBase):
         graph_base.GraphBase.__init__(self, hyper_params, params)
 
         self.hyper_params["decoder_type"] = d_type
+        self.hyper_params["norm"] = norm
 
         self.hyper_params["gen_nn_layer_num"] = gen_params[0]
         self.hyper_params["gen_nn_in_dim"] = gen_params[1]

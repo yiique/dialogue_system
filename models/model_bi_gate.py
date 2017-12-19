@@ -32,11 +32,12 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
         self.embedding = graph_base.get_params([self.hyper_params["common_vocab"] + self.hyper_params["kb_vocab"],
                                                 self.hyper_params["emb_dim"]])
         self.encoder = encoder.Encoder(
-            self.hyper_params["encoder_layer_num"], self.hyper_params["emb_dim"], self.hyper_params["encoder_h_dim"])
+            self.hyper_params["encoder_layer_num"], self.hyper_params["emb_dim"],
+            self.hyper_params["encoder_h_dim"], norm=FLAGS.norm)
         self.kb_scorer = KBscorer.BiKBScorer(
             self.hyper_params["emb_dim"] + self.hyper_params["hred_h_dim"], FLAGS.candidate_num)
         self.hred = HRED.HRED(self.hyper_params["encoder_h_dim"],
-                              self.hyper_params["hred_h_dim"], self.hyper_params["emb_dim"])
+                              self.hyper_params["hred_h_dim"], self.hyper_params["emb_dim"], norm=FLAGS.norm)
         self.decoder = decoder.Decoder(
             [self.hyper_params["decoder_gen_layer_num"], self.hyper_params["emb_dim"],
              self.hyper_params["decoder_gen_h_dim"], self.hyper_params["hred_h_dim"] + FLAGS.candidate_num,
@@ -45,7 +46,7 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
                  self.hyper_params["emb_dim"] + FLAGS.candidate_num * 2 +
                  self.hyper_params["hred_h_dim"] + self.hyper_params["decoder_gen_h_dim"],
                  self.hyper_params["decoder_mlp_h_dim"], 2],
-            d_type="MASK", hyper_params=None, params=None)
+            d_type="MASK", norm=FLAGS.norm, hyper_params=None, params=None)
 
         # self.aux_decoder = decoder.AuxDecoder(
         #     [self.hyper_params["decoder_gen_layer_num"], self.hyper_params["emb_dim"],

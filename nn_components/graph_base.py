@@ -243,7 +243,7 @@ class NormalizationLayer(GraphBase):
             """
             input_list = tf.split(inputs, self.hyper_params["unit_num"], 1)
             gain_list = tf.split(self.gain, self.hyper_params["unit_num"], 1)
-            bias_list = tf.split(self.bias, self.hyper_params["unit_num"], 1)
+            bias_list = tf.split(self.bias, self.hyper_params["unit_num"], 0)
             output_list = []
 
             for i in range(self.hyper_params["unit_num"]):
