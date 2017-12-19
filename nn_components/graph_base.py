@@ -127,8 +127,8 @@ class LSTM(GraphBase):
         if norm:
             self.gate_norm_layer = NormalizationLayer(self.hyper_params["h_dim"], 4)
             self.hidden_norm_layer = NormalizationLayer(self.hyper_params["h_dim"], 1)
-            self.gate_norm_unit = self.gate_norm_layer.create_norm_unit()
-            self.hidden_norm_unit = self.hidden_norm_layer.create_norm_unit()
+            self.gate_norm_unit = self.gate_norm_layer.norm_unit
+            self.hidden_norm_unit = self.hidden_norm_layer.norm_unit
 
             self.params.extend(self.gate_norm_layer.params + self.hidden_norm_layer.params)
         else:
