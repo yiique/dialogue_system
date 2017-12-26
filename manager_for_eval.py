@@ -84,9 +84,9 @@ def main_simple():
         "decoder_mlp_h_dim": 512
     }
 
-    with tf.device('/cpu:0'):
+    with tf.device('/gpu:0'):
         model = model_bi_gate.BiScorerGateDecoderModel(hyper_params=hyper_params)
-        s_d, s_m, prob, pred = model.build_eval()
+        s_d, s_m, t_m, prob, pred = model.build_eval()
 
         config = tf.ConfigProto(allow_soft_placement=True)
         config.gpu_options.allow_growth = True
@@ -98,41 +98,32 @@ def main_simple():
         except:
             tf.logging.warning("NO WEIGHT FILE, INIT FROM BEGINNING...")
 
-        tf.logging.info("STEP2: Training...")
+        tf.logging.info("STEP2: Evaling...")
         count = 0
-        for _ in range(FLAGS.epoch):
-                # while True:
-                try:
-                    batch = []
-                    for j in range(FLAGS.batch_size):
-                        line = f.readline()[:-1]
-                        batch.append(json.loads(line))
-                except:
-                    f.seek(0)
-                    break
+        for _ in f:
+            sample = json.loads(_[:-1])
 
-                count += 1
-                if count == 2:
-                    break
-
-                feed_dict = {}
-                src_dialogue = np.transpose([sample["src_dialogue"] for sample in batch], [1, 2, 0])
-                tgt_dialogue = np.transpose([sample["tgt_dialogue"] for sample in batch], [1, 2, 0])
-                src_mask = np.transpose([sample["src_mask"] for sample in batch], [1, 2, 0])
-                feed_dict[s_d] = src_dialogue
-                feed_dict[s_m] = src_mask
-
-                outputs = sess.run([prob, pred], feed_dict=feed_dict)
-                # pred_tgt = outputs[0]
-
-                tf.logging.info("---------------------src-------------------")
-                print src_dialogue
-                tf.logging.info("---------------------tgt-------------------")
-                print tgt_dialogue
-                tf.logging.info("---------------------pred-------------------")
-                print outputs[0]
-                print outputs[1]
+            count += 1
+            if count == 10:
                 break
+
+            feed_dict = {}
+            src_dialogue = np.transpose([sample["src_dialogue"]], [1, 2, 0])
+            tgt_dialogue = np.transpose([sample["tgt_dialogue"]], [1, 2, 0])
+            src_mask = np.transpose([sample["src_mask"]], [1, 2, 0])
+            turn_mask = np.transpose([sample["turn_mask"]], [1, 0])
+            feed_dict[s_d] = src_dialogue
+            feed_dict[s_m] = src_mask
+            feed_dict[t_m] = turn_mask
+
+            outputs = sess.run([prob, pred], feed_dict=feed_dict)
+            # pred_tgt = outputs[0]
+
+            tf.logging.info("---------------------tgt-------------------")
+            print tgt_dialogue[sum(turn_mask[0])-1]
+            tf.logging.info("---------------------pred-------------------")
+            print outputs[0]
+            print outputs[1]
 
 
 if __name__ == "__main__":

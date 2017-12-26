@@ -145,31 +145,61 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
         return i+1, src_index_ta, tgt_index_ta, turn_mask_ta, src_mask_ta, tgt_mask_ta, prob_ta, \
                [tgt_utterance, hred_memory]
 
-    def build_eval(self, turn_index=0):
+    def build_eval(self):
         # placeholder
         src_dialogue = tf.placeholder(dtype=tf.float32, shape=[
             FLAGS.dia_max_len, FLAGS.sen_max_len, 1])
         src_mask = tf.placeholder(dtype=tf.float32, shape=[
             FLAGS.dia_max_len, FLAGS.sen_max_len, 1])
-        prob, pred = self._test_step(
-            tf.unstack(src_dialogue)[turn_index], tf.unstack(src_mask)[turn_index],
-            [tf.zeros([1, self.hyper_params["hred_h_dim"]]),
-             tf.zeros([1, self.hyper_params["hred_h_dim"]])]
-        )
-        return src_dialogue, src_mask, prob, pred
+        turn_mask = tf.placeholder(dtype=tf.float32, shape=[FLAGS.dia_max_len, 1])
+        prob, pred = self.test_forward(src_dialogue, src_mask, turn_mask)
 
-    def _test_step(self, src_index, src_mask, hred_cell_tm1):
-        turn_mask = tf.ones([1, 1])
+        return src_dialogue, src_mask, turn_mask, prob, pred
+
+    def test_forward(self, src_dialogue, src_mask, turn_mask):
+        src_index_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).\
+            unstack(src_dialogue)
+        turn_mask_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).\
+            unstack(turn_mask)
+        src_mask_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).unstack(src_mask)
+        prob_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+        pred_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+
+        _, _, _, _, _, prob_ta, pred_ta = control_flow_ops.while_loop(
+            cond=lambda i, _1, _2, _3, _4, _5, _6: i < tf.reduce_sum(turn_mask)-1,
+            body=self._test_step,
+            loop_vars=(
+                tf.constant(0, tf.int32),
+                src_index_ta, turn_mask_ta, src_mask_ta,
+                [tf.zeros([FLAGS.batch_size, self.hyper_params["hred_h_dim"]]),
+                 tf.zeros([FLAGS.batch_size, self.hyper_params["hred_h_dim"]])],
+                prob_ta, pred_ta
+            )
+        )
+        return prob_ta.stack(), pred_ta.stack()
+
+    def _test_step(self, i,
+                   src_index_ta, turn_mask_ta, src_mask_ta,
+                   hred_cell_tm1, prob_ta, pred_ta):
+        src_index = src_index_ta.read(i)
+        turn_mask = turn_mask_ta.read(i)
+        src_mask = src_mask_ta.read(i)
         src_emb = tf.nn.embedding_lookup(self.embedding, tf.to_int32(src_index))
 
         src_utterance = self.encoder.forward(src_emb, src_mask, 1)[-1]
-        relevanct_score = tf.zeros([1, FLAGS.candidate_num])
+        relevant_score = tf.zeros([1, FLAGS.candidate_num])
         weighted_sum_content = tf.zeros([1, self.hyper_params["emb_dim"]])
         tgt_utterance, hred_memory = self.hred.lstm.step_with_content(
-            src_utterance, turn_mask, weighted_sum_content, hred_cell_tm1)
+            src_utterance,
+            tf.expand_dims(turn_mask, -1),
+            weighted_sum_content, hred_cell_tm1)
         prob, pred = self.decoder.forward_with_beam(
-            tgt_utterance, weighted_sum_content, relevanct_score, self.embedding)
-        return prob, pred
+            tgt_utterance, weighted_sum_content, relevant_score, self.embedding)
+        prob_ta = prob_ta.write(i, prob)
+        pred_ta = pred_ta.write(i, pred)
+
+        return i+1, src_index_ta, turn_mask_ta, src_mask_ta,\
+               [tgt_utterance, hred_memory], prob_ta, pred_ta
 
     def get_optimizer(self, *args, **kwargs):
         # return tf.train.AdadeltaOptimizer()
