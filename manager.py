@@ -113,7 +113,7 @@ def main_simple():
                 tf.logging.info('Building tower:%d...' % gpu_id)
                 with tf.name_scope('tower_%d' % gpu_id):
                     with tf.variable_scope('cpu_variables', reuse=gpu_id > 0):
-                        s_d, s_m, turn_m, t_d, t_m, loss_simple, grad_simple = model.build_tower()
+                        s_d, s_m, turn_m, t_d, t_m, _, loss_simple, grad_simple, _, _ = model.build_tower()
                         tower_records.append(
                             (s_d, s_m, turn_m, t_d, t_m, loss_simple, grad_simple))
 

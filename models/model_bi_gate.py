@@ -69,7 +69,9 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
 
         self.optimizer = self.get_optimizer()
 
-        self.params_simple = [self.embedding] + self.encoder.params + self.hred.params + self.decoder.params
+        self.params_dia = [self.embedding] + self.encoder.params + self.hred.params + self.decoder.params
+        self.params_qa = [self.embedding] + self.encoder.params + self.kb_scorer.params + \
+                         self.hred.params + self.decoder.params
 
     def build_tower(self):
         # placeholder
@@ -82,20 +84,29 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
             FLAGS.dia_max_len, FLAGS.sen_max_len, FLAGS.batch_size])
         tgt_mask = tf.placeholder(dtype=tf.float32, shape=[
             FLAGS.dia_max_len, FLAGS.sen_max_len, FLAGS.batch_size])
-        # candidates = tf.placeholder(dtype=tf.float32, shape=[
-        #     FLAGS.dia_max_len, FLAGS.batch_size, FLAGS.candidate_num, 2])
+        candidates = tf.placeholder(dtype=tf.float32, shape=[
+            FLAGS.dia_max_len, FLAGS.batch_size, FLAGS.candidate_num, 2])
 
-        prob_simple = self.train_forward_simple(src_dialogue, src_mask, turn_mask, tgt_dialogue, tgt_mask)
-        train_loss_simple = -tf.reduce_mean(
+        prob_dia = self.train_forward_dia(src_dialogue, tgt_dialogue, turn_mask, src_mask, tgt_mask)
+        train_loss_dia = -tf.reduce_mean(
             tf.reduce_sum(tf.reduce_sum(
                 tf.one_hot(tf.to_int32(tgt_dialogue), FLAGS.common_vocab + FLAGS.candidate_num, 1.0, 0.0) *
-                tf.log(tf.clip_by_value(prob_simple, 1e-20, 1.0)), -1) * tgt_mask, [0, 1])
+                tf.log(tf.clip_by_value(prob_dia, 1e-20, 1.0)), -1) * tgt_mask, [0, 1])
         )
-        train_grad_simple = self.optimizer.compute_gradients(train_loss_simple, self.params_simple)
+        train_grad_dia = self.optimizer.compute_gradients(train_loss_dia, self.params_dia)
 
-        return src_dialogue, src_mask, turn_mask, tgt_dialogue, tgt_mask, train_loss_simple, train_grad_simple
+        prob_qa = self.train_forward_qa(src_dialogue, tgt_dialogue, turn_mask, src_mask, tgt_mask, candidates)
+        train_loss_qa = -tf.reduce_mean(
+            tf.reduce_sum(tf.reduce_sum(
+                tf.one_hot(tf.to_int32(tgt_dialogue), FLAGS.common_vocab + FLAGS.candidate_num, 1.0, 0.0) *
+                tf.log(tf.clip_by_value(prob_qa, 1e-20, 1.0)), -1) * tgt_mask, [0, 1])
+        )
+        train_grad_qa = self.optimizer.compute_gradients(train_loss_qa, self.params_qa)
 
-    def train_forward_simple(self, src_dialogue, src_mask, turn_mask, tgt_dialogue, tgt_mask):
+        return src_dialogue, src_mask, turn_mask, tgt_dialogue, tgt_mask, candidates, \
+               train_loss_dia, train_grad_dia, train_loss_qa, train_grad_qa
+
+    def train_forward_dia(self, src_dialogue, tgt_dialogue, turn_mask, src_mask, tgt_mask):
         src_index_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).\
             unstack(src_dialogue)
         tgt_index_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).\
@@ -108,7 +119,7 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
 
         _, _, _, _, _, _, prob_ta, _ = control_flow_ops.while_loop(
             cond=lambda i, _1, _2, _3, _4, _5, _6, _7: i < src_index_ta.size(),
-            body=self._train_step_simple,
+            body=self._train_step_dia,
             loop_vars=(
                 tf.constant(0, tf.int32),
                 src_index_ta, tgt_index_ta, turn_mask_ta, src_mask_ta, tgt_mask_ta, prob_ta,
@@ -118,9 +129,9 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
         )
         return prob_ta.stack()
 
-    def _train_step_simple(self, i,
-                           src_index_ta, tgt_index_ta, turn_mask_ta, src_mask_ta, tgt_mask_ta, prob_ta,
-                           hred_cell_tm1):
+    def _train_step_dia(self, i,
+                        src_index_ta, tgt_index_ta, turn_mask_ta, src_mask_ta, tgt_mask_ta, prob_ta,
+                        hred_cell_tm1):
         src_index = src_index_ta.read(i)
         tgt_index = tgt_index_ta.read(i)
         turn_mask = turn_mask_ta.read(i)
@@ -145,6 +156,54 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
         return i+1, src_index_ta, tgt_index_ta, turn_mask_ta, src_mask_ta, tgt_mask_ta, prob_ta, \
                [tgt_utterance, hred_memory]
 
+    def train_forward_qa(self, src_dialogue, tgt_dialogue, turn_mask, src_mask, tgt_mask, cans):
+        src_index_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).unstack(src_dialogue)
+        tgt_index_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).unstack(tgt_dialogue)
+        turn_mask_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).unstack(turn_mask)
+        src_mask_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).unstack(src_mask)
+        tgt_mask_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).unstack(tgt_mask)
+        can_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).unstack(cans)
+        prob_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+
+        _, _, _, _, _, _, _, prob_ta, _ = control_flow_ops.while_loop(
+            cond=lambda i, _1, _2, _3, _4, _5, _6, _7, _8: i < turn_mask_ta.size(),
+            body=self._train_step_qa,
+            loop_vars=(
+                tf.constant(0, tf.int32),
+                src_index_ta, tgt_index_ta, turn_mask_ta, src_mask_ta, tgt_mask_ta, can_ta, prob_ta,
+                [tf.zeros([FLAGS.batch_size, self.hyper_params["hred_h_dim"]]),
+                 tf.zeros([FLAGS.batch_size, self.hyper_params["hred_h_dim"]])]
+            )
+        )
+        return prob_ta.stack()
+
+    def _train_step_qa(self, i,
+                       src_index_ta, tgt_index_ta, turn_mask_ta, src_mask_ta, tgt_mask_ta, can_ta,
+                       prob_ta, hred_cell_tm1):
+        src_index = src_index_ta.read(i)
+        tgt_index = tgt_index_ta.read(i)
+        turn_mask = turn_mask_ta.read(i)
+        src_mask = src_mask_ta.read(i)
+        tgt_mask = tgt_mask_ta.read(i)
+        cans = can_ta.read(i)
+        src_emb = tf.nn.embedding_lookup(self.embedding, tf.to_int32(src_index))
+        tgt_emb = tf.nn.embedding_lookup(self.embedding, tf.to_int32(tgt_index))
+        cans_emb = tf.nn.embedding_lookup(self.embedding, tf.to_int32(cans))
+
+        src_utterance = self.encoder.forward(src_emb, src_mask)[-1]
+        relevant_score, weighted_sum_content = \
+            self.kb_scorer.scorer(src_emb, cans_emb, hred_cell_tm1[0], src_mask)
+        tgt_utterance, hred_memory = self.hred.lstm.step_with_content(
+            src_utterance, tf.expand_dims(turn_mask, -1),
+            weighted_sum_content, hred_cell_tm1
+        )
+        prob = self.decoder.forward(tf.expand_dims(tgt_index, -1),
+                                    tgt_emb, tf.expand_dims(tgt_mask, -1),
+                                    tgt_utterance, weighted_sum_content, relevant_score)
+        prob_ta = prob_ta.write(i, prob)
+
+        return i+1, src_index_ta, tgt_index_ta, turn_mask_ta, src_mask_ta, tgt_mask_ta, can_ta, prob_ta, hred_memory
+
     def build_eval(self):
         # placeholder
         src_dialogue = tf.placeholder(dtype=tf.float32, shape=[
@@ -163,10 +222,10 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
             unstack(turn_mask)
         src_mask_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).unstack(src_mask)
         prob_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
-        pred_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+        pred_ta = tensor_array_ops.TensorArray(dtype=tf.int32, size=0, dynamic_size=True)
 
         _, _, _, _, _, prob_ta, pred_ta = control_flow_ops.while_loop(
-            cond=lambda i, _1, _2, _3, _4, _5, _6: i < tf.reduce_sum(turn_mask)-1,
+            cond=lambda i, _1, _2, _3, _4, _5, _6: i < tf.to_int32(tf.reduce_sum(turn_mask)-1),
             body=self._test_step,
             loop_vars=(
                 tf.constant(0, tf.int32),
@@ -202,15 +261,14 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
                [tgt_utterance, hred_memory], prob_ta, pred_ta
 
     def get_optimizer(self, *args, **kwargs):
-        # return tf.train.AdadeltaOptimizer()
-        # ada should be initialize before use, so it should be written in __init__
         # return tf.train.GradientDescentOptimizer(FLAGS.learning_rate)
         # return tf.train.RMSPropOptimizer(FLAGS.learning_rate)
+        # return tf.train.AdadeltaOptimizer()
         return tf.train.AdamOptimizer(FLAGS.learning_rate)
 
-    def save_weight(self, session, idx=None):
-        if idx:
-            self.saver.save(session, FLAGS.weight_path + str(idx))
+    def save_weight(self, session, suffix=None):
+        if suffix:
+            self.saver.save(session, FLAGS.weight_path + suffix)
         else:
             self.saver.save(session, FLAGS.weight_path)
 

@@ -35,9 +35,13 @@ class BiKBScorer(graph_base.GraphBase):
 
             score = tf.matmul(tf.expand_dims(tf.matmul(tf.concat([x_average, hidden_tm1], 1), self.S), 1),
                               triple_average)                                           # batch_size * 1 * can
+
+            sum_content = tf.reduce_sum(
+                tf.transpose(score, perm=[0, 2, 1]) * tf.transpose(triple_average, perm=[0, 2, 1]),
+                axis=1)                                                                 # batch_size * emb
             score = tf.squeeze(score)                                                   # batch_size * can
 
-            return score
+            return score, sum_content
 
         return unit
 
