@@ -26,7 +26,7 @@ multi_dia = "../corpus3/article.processed"
 multi_index = "../corpus3/article.index"
 actor_qa_prefix = "../corpus3/actor_qa.parsed-"
 
-dictionary_file = "../../corpus3/dictionary"
+dictionary_file = "../corpus3/dictionary"
 
 
 MAX_LEN = 80
@@ -35,7 +35,7 @@ MAX_TURN = 8
 
 # Question, Answer, Subject, Predicate, Object, ConfidenceScore
 def main_for_statistic():
-    dictionary = {"<START>": 0, "<END>": 0, "<UNK>": 0}
+    dictionary = {}
     entity = {}
     relation = {}
     count = [0, 0]
@@ -80,8 +80,8 @@ def main_for_statistic():
         relation[triple[1]] = 0
     f.close()
 
-    count = 0
-    dictionary = {}
+    count = 3
+    dictionary = {"<START>": 0, "<END>": 1, "<UNK>": 2}
     for pair in sort_dictionary:
         dictionary[pair[0]] = count
         count += 1
@@ -100,7 +100,7 @@ def main_for_statistic():
 def main_for_index():
     dictionary = json.loads(open(dictionary_file).readline())
 
-    f_new = open("./corpus1/mul_dia.index", 'w')
+    f_new = open(multi_index, 'w')
     f_old = open(multi_dia, 'r')
 
     count = 0
@@ -167,9 +167,9 @@ def main_for_index():
 def file_split():
     count = 0
     f = open(multi_index)
-    f_train = open(multi_index + ".train")
-    f_valid = open(multi_index + ".valid")
-    f_test = open(multi_index + ".test")
+    f_train = open(multi_index + ".train", 'w')
+    f_valid = open(multi_index + ".valid", 'w')
+    f_test = open(multi_index + ".test", 'w')
     for line in f:
         count += 1
         if count % 100 == 0:
