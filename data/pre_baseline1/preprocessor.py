@@ -1,3 +1,4 @@
+import cPickle as pickle
 import json
 import sys
 sys.path.append("../..")
@@ -5,35 +6,37 @@ sys.path.append("../..")
 
 from data import utils
 
-prefix = ""
-dictionary_file = "../baseline1/dictionary"
+prefix = "../baseline1/ubuntu.pkl"
+dictionary_file = "../baseline1/Dataset.dict.pkl"
 
 
 MAX_LEN = 80
 MAX_TURN = 8
 CUT_OFF = 30000
 CUT = True
+Dictionary = {x[0]: int(x[1]) for x in pickle.load(open(dictionary_file))}
+Dictionary["<START>"] = len(Dictionary)
+Dictionary["<END"] = len(Dictionary)
 
 
-def line_cleaner(line):
-    new_line = ""
-    sens = line.strip().split("__eou__ __eot__")
+def line_cleaner(indices):
+    sens = ("</w>".join([str(x) for x in indices])).split("</w>1</w>")
+
     if len(sens) > MAX_TURN * 2:
-        return new_line
+        return ""
     new_sens = []
     for sen in sens:
-        sen = sen.replace("__eou__", ".")
-        words = sen.split(" ")
+        words = sen.split("</w>")
         if len(words) > MAX_LEN - 2:
-            return new_line
+            return ""
         else:
-            new_sens.append(sen)
+            new_sens.append(" ".join(words))
     new_line = "</s>".join(new_sens) + "\n"
     return new_line
 
 
 def file_cleaner(file_name):
-    f_old = open(file_name)
+    f_old = pickle.load(open(file_name))
     f_new = open(file_name + ".clean", 'w')
     count = [0, 0]
     for line in f_old:
@@ -54,48 +57,16 @@ def main_for_preprocess():
     print "test file cleaning: (total/succ)", file_cleaner(prefix + ".test")
 
 
-def main_for_statistic():
-    dictionary = {}
-
-    f = open(prefix + ".train.clean")
-    for line in f:
-        sens = line.strip().split("</s>")
-        for sen in sens:
-            words = sen.split(" ")
-            for word in words:
-                if word not in dictionary:
-                    dictionary[word] = 0
-                dictionary[word] += 1
-    print "total words: ", len(dictionary)
-    f.close()
-
-    sort_dictionary = sorted(dictionary.iteritems(), key=lambda d: d[1], reverse=True)
-    if CUT:
-        sort_dictionary = sort_dictionary[0:CUT_OFF]
-
-    count = 3
-    dictionary = {"<START>": 0, "<END>": 1, "<UNK>": 2}
-    for pair in sort_dictionary:
-        dictionary[pair[0]] = count
-        count += 1
-
-    print "dict len: ", len(dictionary)
-    f = open(dictionary_file, 'w')
-    f.write(json.dumps(dictionary))
-
-
 def file_indexer(file_name):
     f_old = open(file_name)
     f_new = open(file_name + ".index", 'w')
-
-    dictionary = json.loads(open(dictionary_file).readline())
 
     count = 0
     for line in f_old:
         sens = line.strip().split("</s>")
         sample = {
-            "src_dialogue": [[dictionary["<UNK>"] for _ in range(MAX_LEN)] for __ in range(MAX_TURN)],
-            "tgt_dialogue": [[dictionary["<UNK>"] for _ in range(MAX_LEN)] for __ in range(MAX_TURN)],
+            "src_dialogue": [[Dictionary["**unknown**"] for _ in range(MAX_LEN)] for __ in range(MAX_TURN)],
+            "tgt_dialogue": [[Dictionary["**unknown**"] for _ in range(MAX_LEN)] for __ in range(MAX_TURN)],
             "turn_mask": [0 for _ in range(MAX_TURN)],
             "src_mask": [[0 for _ in range(MAX_LEN)] for __ in range(MAX_TURN)],
             "tgt_mask": [[0 for _ in range(MAX_LEN)] for __ in range(MAX_TURN)]
@@ -109,23 +80,19 @@ def file_indexer(file_name):
                 dialogue_key = "tgt_dialogue"
                 mask_key = "tgt_mask"
             sen = sens[i]
-            sample[dialogue_key][int(i/2)][0] = dictionary["<START>"]
+            sample[dialogue_key][int(i/2)][0] = Dictionary["<START>"]
             sample[mask_key][int(i/2)][0] = 1
             words = sen.split(" ")
             for j in range(len(words)):
-                uchar = words[j]
-                if uchar in dictionary:
-                    index = dictionary[uchar]
-                else:
-                    index = dictionary["<UNK>"]
+                index = int(words[j])
                 sample[dialogue_key][int(i/2)][j+1] = index
                 sample[mask_key][int(i/2)][j+1] = 1
-            sample[dialogue_key][int(i/2)][j+2] = dictionary["<END>"]
+            sample[dialogue_key][int(i/2)][j+2] = Dictionary["<END>"]
             sample[mask_key][int(i/2)][j+2] = 1
             sample["turn_mask"][int(i/2)] = 1
         if len(sens) % 2 != 0:
-            sample["tgt_dialogue"][int(i/2)][0] = dictionary["<START>"]
-            sample["tgt_dialogue"][int(i/2)][1] = dictionary["<END>"]
+            sample["tgt_dialogue"][int(i/2)][0] = Dictionary["<START>"]
+            sample["tgt_dialogue"][int(i/2)][1] = Dictionary["<END>"]
             sample["tgt_mask"][int(i/2)][0] = 1
             sample["tgt_mask"][int(i/2)][1] = 1
         f_new.write(json.dumps(sample) + "\n")
@@ -144,5 +111,4 @@ def main_for_index():
 
 if __name__ == "__main__":
     main_for_preprocess()
-    main_for_statistic()
     main_for_index()
