@@ -121,7 +121,7 @@ def main_simple():
         avg_loss = tf.reduce_mean(tower_losses)
         update = model.optimizer.apply_gradients(average_gradients(tower_grads))
 
-        t_sd, t_sm, prob, pred = model.build_eval()
+        t_sd, t_sm, t_t, prob, pred = model.build_eval()
 
         config = tf.ConfigProto(allow_soft_placement=True)
         config.gpu_options.allow_growth = True
@@ -204,9 +204,11 @@ def main_simple():
             feed_dict = {}
             src_dialogue = np.transpose([sample["src_dialogue"] for sample in batch], [1, 2, 0])
             src_mask = np.transpose([sample["src_mask"] for sample in batch], [1, 2, 0])
+            turn_mask = np.transpose([sample["turn_mask"] for sample in batch], [1, 0])
             tgt_dialogue = np.transpose([sample["tgt_dialogue"] for sample in batch], [1, 2, 0])
             feed_dict[t_sd] = src_dialogue
             feed_dict[t_sm] = src_mask
+            feed_dict[t_t] = turn_mask
 
             outputs = sess.run([prob, pred], feed_dict=feed_dict)
 

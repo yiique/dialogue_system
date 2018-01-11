@@ -230,8 +230,8 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
             loop_vars=(
                 tf.constant(0, tf.int32),
                 src_index_ta, turn_mask_ta, src_mask_ta,
-                [tf.zeros([FLAGS.batch_size, self.hyper_params["hred_h_dim"]]),
-                 tf.zeros([FLAGS.batch_size, self.hyper_params["hred_h_dim"]])],
+                [tf.zeros([1, self.hyper_params["hred_h_dim"]]),
+                 tf.zeros([1, self.hyper_params["hred_h_dim"]])],
                 prob_ta, pred_ta
             )
         )

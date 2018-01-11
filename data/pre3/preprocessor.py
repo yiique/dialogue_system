@@ -74,7 +74,7 @@ def main_for_statistic():
 
     f = open(kb_triples_file)
     for line in f:
-        triple = line[:-1].split("\t\t")
+        triple = line.strip().split("\t\t")
         entity[triple[0]] = 0
         entity[triple[2]] = 0
         relation[triple[1]] = 0
