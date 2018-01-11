@@ -42,7 +42,7 @@ def main_for_statistic():
 
     f = open(multi_dia)
     for line in f:
-        sens = line[:-1].split("</s>")
+        sens = line.strip().split("</s>")
         for sen in sens:
             sen = sen.decode('utf-8')
             for char in sen:
@@ -93,6 +93,8 @@ def main_for_statistic():
         count += 1
 
     print "dict len: ", len(dictionary)
+    print "entity len: ", len(entity)
+    print "relation len: ", len(relation)
     f = open(dictionary_file, 'w')
     f.write(json.dumps(dictionary))
 

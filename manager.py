@@ -1,63 +1,22 @@
 __author__ = 'liushuman'
 
-'''
-# get TF logger
-
-# create formatter and add it to the handlers
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-# create file handler which logs even debug messages
-fh = logging.FileHandler('tensorflow.log')
-fh.setLevel(logging.DEBUG)
-fh.setFormatter(formatter)
-log.addHandler(fh)'''
-
 
 import json
-import logging
 import numpy as np
 import random
 import sys
+sys.path.append("../..")
 import tensorflow as tf
 import time
 
 
 SEED = 88
-
-
-log = logging.getLogger('tensorflow')
-log.setLevel(logging.DEBUG)
-
 FLAGS = tf.flags.FLAGS
 
-tf.flags.DEFINE_integer("GPU_num", 4, """""")
 
-tf.flags.DEFINE_integer("batch_size", 40, """""")
-tf.flags.DEFINE_integer("beam_size", 10, """""")
-tf.flags.DEFINE_integer("dia_max_len", 10, """""")
-tf.flags.DEFINE_integer("sen_max_len", 60, """""")
-tf.flags.DEFINE_integer("candidate_num", 300,
-                        """
-                            candidate triples number that been scored, weight of others is zero
-                        """)
-tf.flags.DEFINE_integer("common_vocab", 8603, """""")
-tf.flags.DEFINE_integer("entities", 51590, """""")
-tf.flags.DEFINE_integer("relations", 3996, """""")
-tf.flags.DEFINE_integer("start_token", 8601, """""")
-tf.flags.DEFINE_integer("end_token", 8600, """""")
-tf.flags.DEFINE_integer("unk", 8602, """""")
-
-tf.flags.DEFINE_float("grad_clip", 5.0, """""")
-tf.flags.DEFINE_float("learning_rate", 0.001, """""")
-tf.flags.DEFINE_float("penalty_factor", 0.6, """""")
-tf.flags.DEFINE_boolean("norm", False, """""")
-tf.flags.DEFINE_float("aux_weight", 0.2, """""")
-tf.flags.DEFINE_integer("epoch", 10, """""")
-
-tf.flags.DEFINE_string("weight_path", "./data/corpus1/weight.save", """""")
-
-
-from models import model_bi_gate
+# Change config in configs and model in models to judge model
+from configurations.configs import config_corpus3 as model_config
+from models.model_bi_gate import BiScorerGateDecoderModel as Model
 # TODO: highway, dropout
 
 
@@ -80,31 +39,16 @@ def average_gradients(tower_grads):
 
 
 def main_simple():
-    ################################
-    # step1: Init
-    ################################
     random.seed(SEED)
     np.random.seed(SEED)
 
-    f = open("./data/corpus1/mul_dia.index", 'r')
+    f = open(FLAGS.training_path, 'r')
 
-    hyper_params = {
-        "common_vocab": FLAGS.common_vocab,
-        "kb_vocab": FLAGS.entities + FLAGS.relations,
-
-        "emb_dim": 512,
-        "encoder_layer_num": 1,
-        "encoder_h_dim": 512,
-        "hred_h_dim": 1024,
-        "decoder_gen_layer_num": 1,
-        "decoder_gen_h_dim": 512,
-        "decoder_mlp_layer_num": 3,
-        "decoder_mlp_h_dim": 512
-    }
+    hyper_params = model_config.HYPER_PARAMS
 
     with tf.device('/cpu:0'):
         tf.logging.info("STEP1: Init...")
-        model = model_bi_gate.BiScorerGateDecoderModel(hyper_params=hyper_params)
+        model = Model(hyper_params=hyper_params)
 
         tower_records = []
         tf.logging.info("STEP2: Map/Reduce...")
@@ -136,7 +80,7 @@ def main_simple():
         tf.logging.info("STEP3: Training...")
         losses = []
         count = 0
-        stop_control = 200000
+        stop_control = -1
         for ep in range(FLAGS.epoch):
             while True:
                 try:
@@ -188,9 +132,9 @@ def main_simple():
 
             model.save_weight(sess)
 
-        tf.logging.info("STEP3: Evaluating...")
+        tf.logging.info("STEP4: Evaluating...")
         count = 0
-        for _ in range(0, stop_control-1):
+        for _ in range(0, FLAGS.batch_size - 1):
             try:
                 batch = []
                 for j in range(1):
