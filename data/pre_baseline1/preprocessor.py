@@ -18,6 +18,8 @@ CUT = True
 def line_cleaner(line):
     new_line = ""
     sens = line.strip().split("__eou__ __eot__")
+    if len(sens) > MAX_TURN * 2:
+        return new_line
     new_sens = []
     for sen in sens:
         sen = sen.replace("__eou__", ".")
