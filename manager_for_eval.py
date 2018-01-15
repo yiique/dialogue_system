@@ -32,7 +32,8 @@ def main_eval():
     f_r = open(FLAGS.valid_reference_path, 'w')
 
     hyper_params = model_config.HYPER_PARAMS
-    dictionary = json.loads(open(FLAGS.dictionary).readline())
+    dictionary = json.loads(open(FLAGS.dictionary_path).readline())
+    dictionary = {dictionary[key]: key for key in dictionary}
 
     with tf.device('/gpu:0'):
         model = Model(hyper_params=hyper_params)
@@ -77,8 +78,8 @@ def main_eval():
                 raise AssertionError
 
             for i in range(len(tgt_flatten)):
-                tgt_sentence = tgt_flatten[i]
-                pred_sentence = pred_flatten[i]
+                tgt_sentence = tgt_flatten[i].tolist()
+                pred_sentence = pred_flatten[i].tolist()
                 te_index = tgt_sentence.index(FLAGS.end_token)
                 if FLAGS.end_token not in pred_sentence:
                     pe_index = FLAGS.sen_max_len
