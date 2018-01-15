@@ -34,8 +34,11 @@ tf.flags.DEFINE_boolean("norm", False, """""")
 tf.flags.DEFINE_float("aux_weight", 0.2, """""")
 tf.flags.DEFINE_integer("epoch", 20, """""")
 
+tf.flags.DEFINE_string("dictionary_path", "./data/baseline1/dictionary", """""")
 tf.flags.DEFINE_string("training_path", "./data/baseline1/ubuntu.train", """""")
 tf.flags.DEFINE_string("valid_path", "./data/baseline1/ubuntu.valid", """""")
+tf.flags.DEFINE_string("valid_hypothesis_path", "./data/baseline1/valid.hypothesis", """""")
+tf.flags.DEFINE_string("valid_reference_path", "./data/baseline1/valid.reference", """""")
 tf.flags.DEFINE_string("test_path", "./data/baseline1/ubuntu.test", """""")
 tf.flags.DEFINE_string("weight_path", "./data/baseline1/weight.save", """""")
 
