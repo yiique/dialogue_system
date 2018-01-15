@@ -17,6 +17,7 @@ CUT = True
 Dictionary = {x[0]: int(x[1]) for x in pickle.load(open(dictionary_file))}
 Dictionary["<START>"] = len(Dictionary)
 Dictionary["<END>"] = len(Dictionary)
+open("../baseline1/dictionary", 'w').write(json.dumps(Dictionary))
 
 
 def line_cleaner(indices):
