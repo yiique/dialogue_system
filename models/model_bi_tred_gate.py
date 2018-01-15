@@ -247,7 +247,7 @@ class BiScorerTREDGateDecoderModel(graph_base.GraphBase):
         weighted_sum_content = tf.zeros([1, self.hyper_params["emb_dim"]])
         tgt_utterance_tm1 = hred_cell_tm1[0]
         tgt_utterance, hred_memory = self.hred.lstm.step_with_content(
-            tf.concat([src_utterance, tgt_utterance_tm1], 1),
+            tf.concat([tgt_utterance_tm1, src_utterance], 1),
             tf.expand_dims(turn_mask, -1),
             weighted_sum_content, hred_cell_tm1)
         prob, pred = self.decoder.forward_with_beam(
