@@ -81,11 +81,13 @@ class BiScorerTREDGateDecoderModel(graph_base.GraphBase):
         candidates = tf.placeholder(dtype=tf.float32, shape=[
             FLAGS.dia_max_len, FLAGS.batch_size, FLAGS.candidate_num, 2])
 
+        part_tgt_mask = tf.concat([tf.zeros([1, FLAGS.sen_max_len, FLAGS.batch_size]),
+                                   tf.ones([FLAGS.dia_max_len-1, FLAGS.sen_max_len, FLAGS.batch_size])], 0) * tgt_mask
         prob_dia = self.train_forward_dia(src_dialogue, tgt_dialogue, turn_mask, src_mask, tgt_mask)
         train_loss_dia = -tf.reduce_mean(
             tf.reduce_sum(tf.reduce_sum(
                 tf.one_hot(tf.to_int32(tgt_dialogue), FLAGS.common_vocab + FLAGS.candidate_num, 1.0, 0.0) *
-                tf.log(tf.clip_by_value(prob_dia, 1e-20, 1.0)), -1) * tgt_mask, [0, 1])
+                tf.log(tf.clip_by_value(prob_dia, 1e-20, 1.0)), -1) * part_tgt_mask, [0, 1])
         )
         train_grad_dia = self.optimizer.compute_gradients(train_loss_dia, self.params_dia)
 
@@ -139,7 +141,7 @@ class BiScorerTREDGateDecoderModel(graph_base.GraphBase):
         weighted_sum_content = tf.zeros([FLAGS.batch_size, self.hyper_params["emb_dim"]])
         tgt_utterance_tm1 = hred_cell_tm1[0]
         tgt_utterance, hred_memory = self.hred.lstm.step_with_content(
-            tf.concat([src_utterance, tgt_utterance_tm1], 1),
+            tf.concat([tgt_utterance_tm1, src_utterance], 1),
             tf.expand_dims(turn_mask, -1),
             weighted_sum_content, hred_cell_tm1)
         prob = self.decoder.forward(tf.expand_dims(tgt_index, -1),
