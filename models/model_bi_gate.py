@@ -225,7 +225,7 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
         pred_ta = tensor_array_ops.TensorArray(dtype=tf.int32, size=0, dynamic_size=True)
 
         _, _, _, _, _, prob_ta, pred_ta = control_flow_ops.while_loop(
-            cond=lambda i, _1, _2, _3, _4, _5, _6: i < tf.to_int32(tf.reduce_sum(turn_mask)-1),
+            cond=lambda i, _1, _2, _3, _4, _5, _6: i < tf.to_int32(tf.reduce_sum(turn_mask)),
             body=self._test_step,
             loop_vars=(
                 tf.constant(0, tf.int32),

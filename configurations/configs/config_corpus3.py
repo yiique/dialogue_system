@@ -34,6 +34,14 @@ tf.flags.DEFINE_boolean("norm", False, """""")
 tf.flags.DEFINE_float("aux_weight", 0.2, """""")
 tf.flags.DEFINE_integer("epoch", 50, """""")
 
+tf.flags.DEFINE_string("multi_bleu_path", "./data/multi-bleu.perl", """""")
+
+tf.flags.DEFINE_string("dictionary_path", "./data/corpus3/dictionary", """""")
+tf.flags.DEFINE_string("training_path", "./data/corpus3/article.index.train", """""")
+tf.flags.DEFINE_string("valid_path", "./data/corpus3/article.index.valid", """""")
+tf.flags.DEFINE_string("valid_hypothesis_path", "./data/corpus3/valid.hypothesis", """""")
+tf.flags.DEFINE_string("valid_reference_path", "./data/corpus3/valid.reference", """""")
+tf.flags.DEFINE_string("test_path", "./data/corpus3/article.index.test", """""")
 tf.flags.DEFINE_string("weight_path", "./data/corpus3/weight.save", """""")
 
 
