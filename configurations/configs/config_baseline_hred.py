@@ -20,12 +20,12 @@ tf.flags.DEFINE_integer("candidate_num", 0,
                         """
                             candidate triples number that been scored, weight of others is zero
                         """)
-tf.flags.DEFINE_integer("common_vocab", 8603, """""")
+tf.flags.DEFINE_integer("common_vocab", 20002, """""")
 tf.flags.DEFINE_integer("entities", 0, """""")
 tf.flags.DEFINE_integer("relations", 0, """""")
-tf.flags.DEFINE_integer("start_token", 0, """""")
-tf.flags.DEFINE_integer("end_token", 1, """""")
-tf.flags.DEFINE_integer("unk", 2, """""")
+tf.flags.DEFINE_integer("start_token", 20000, """""")
+tf.flags.DEFINE_integer("end_token", 20001, """""")
+tf.flags.DEFINE_integer("unk", 0, """""")
 
 tf.flags.DEFINE_float("grad_clip", 5.0, """""")
 tf.flags.DEFINE_float("learning_rate", 0.001, """""")

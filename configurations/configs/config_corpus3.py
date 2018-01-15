@@ -20,9 +20,9 @@ tf.flags.DEFINE_integer("candidate_num", 300,
                         """
                             candidate triples number that been scored, weight of others is zero
                         """)
-tf.flags.DEFINE_integer("common_vocab", 8603, """""")
-tf.flags.DEFINE_integer("entities", 51590, """""")
-tf.flags.DEFINE_integer("relations", 3996, """""")
+tf.flags.DEFINE_integer("common_vocab", 12109, """""")
+tf.flags.DEFINE_integer("entities", 78911, """""")
+tf.flags.DEFINE_integer("relations", 13, """""")
 tf.flags.DEFINE_integer("start_token", 0, """""")
 tf.flags.DEFINE_integer("end_token", 1, """""")
 tf.flags.DEFINE_integer("unk", 2, """""")
@@ -32,7 +32,7 @@ tf.flags.DEFINE_float("learning_rate", 0.001, """""")
 tf.flags.DEFINE_float("penalty_factor", 0.6, """""")
 tf.flags.DEFINE_boolean("norm", False, """""")
 tf.flags.DEFINE_float("aux_weight", 0.2, """""")
-tf.flags.DEFINE_integer("epoch", 50, """""")
+tf.flags.DEFINE_integer("epoch", 80, """""")
 
 tf.flags.DEFINE_string("multi_bleu_path", "./data/multi-bleu.perl", """""")
 
@@ -41,6 +41,7 @@ tf.flags.DEFINE_string("training_path", "./data/corpus3/article.index.train", ""
 tf.flags.DEFINE_string("valid_path", "./data/corpus3/article.index.valid", """""")
 tf.flags.DEFINE_string("valid_hypothesis_path", "./data/corpus3/valid.hypothesis", """""")
 tf.flags.DEFINE_string("valid_reference_path", "./data/corpus3/valid.reference", """""")
+tf.flags.DEFINE_string("valid_demo_path", "./data/corpus3/valid.demo", """""")
 tf.flags.DEFINE_string("test_path", "./data/corpus3/article.index.test", """""")
 tf.flags.DEFINE_string("weight_path", "./data/corpus3/weight.save", """""")
 

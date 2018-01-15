@@ -3,6 +3,7 @@ __author__ = 'liushuman'
 
 import json
 import numpy as np
+import os
 import random
 import re
 import subprocess
@@ -30,6 +31,7 @@ def main_eval():
 
     f_h = open(FLAGS.valid_hypothesis_path, 'w')
     f_r = open(FLAGS.valid_reference_path, 'w')
+    f_demo = open(FLAGS.valid_demo_path, 'w')
 
     hyper_params = model_config.HYPER_PARAMS
     dictionary = json.loads(open(FLAGS.dictionary_path).readline())
@@ -70,36 +72,49 @@ def main_eval():
             outputs = sess.run([prob, pred], feed_dict=feed_dict)
             pred_dialogue = outputs[1]
 
+            src_flatten = np.transpose(src_dialogue, [0, 2, 1])
+            src_flatten = [x[0] for x in src_flatten][0: int(sum([y[0] for y in turn_mask]))]
             tgt_flatten = np.transpose(tgt_dialogue, [0, 2, 1])
             tgt_flatten = [x[0] for x in tgt_flatten][0: int(sum([y[0] for y in turn_mask]))]
             pred_flatten = [x[0] for x in pred_dialogue]             # turn_mask * 80
 
-            if len(tgt_flatten) != len(pred_flatten):
+            if len(tgt_flatten) != len(pred_flatten) or len(src_flatten) != len(tgt_flatten):
                 raise AssertionError
 
             for i in range(len(tgt_flatten)):
+                src_sentence = src_flatten[i].tolist()
                 tgt_sentence = tgt_flatten[i].tolist()
                 pred_sentence = pred_flatten[i].tolist()
+                se_index = src_sentence.index(FLAGS.end_token)
                 te_index = tgt_sentence.index(FLAGS.end_token)
                 if FLAGS.end_token not in pred_sentence:
                     pe_index = FLAGS.sen_max_len
                 else:
                     pe_index = pred_sentence.index(FLAGS.end_token)
 
+                src_sentence = src_sentence[0: se_index+1]
                 tgt_sentence = tgt_sentence[0: te_index+1]
                 pred_sentence = pred_sentence[0: pe_index+1]
 
+                src_tokens = [dictionary[x].encode('utf-8') for x in src_sentence]
                 tgt_tokens = [dictionary[x].encode('utf-8') for x in tgt_sentence]
                 pred_tokens = [dictionary[x].encode('utf-8') for x in pred_sentence]
 
                 f_r.write(" ".join(tgt_tokens) + "\n")
                 f_h.write(" ".join(pred_tokens) + "\n")
 
+                f_demo.write("<src>" + " ".join(src_tokens) + "</src>\n")
+                f_demo.write("<tgt>" + " ".join(tgt_tokens) + "</tgt>\n")
+                f_demo.write("<pred>" + " ".join(pred_tokens) + "</pred>\n")
+
         f_r.close()
         f_h.close()
 
         tf.logging.info("STEP3: Calculating BLEU...")
-        with open(FLAGS.valid_hypothesis_path, 'r') as read_pred:
+        os.system("perl " + FLAGS.multi_bleu_path + " " + FLAGS.valid_reference_path +
+                  " < " + FLAGS.valid_hypothesis_path)
+
+        '''with open(FLAGS.valid_hypothesis_path, 'r') as read_pred:
             bleu_cmd = [FLAGS.multi_bleu_path]
             bleu_cmd += [FLAGS.valid_reference_path]
             try:
@@ -115,7 +130,7 @@ def main_eval():
                     print "ERROR IN CAL BLEU:", error.output
                 bleu_score = np.float32(0.0)
 
-        print "BLEU score: ", np.float32(bleu_score)
+        print "BLEU score: ", np.float32(bleu_score)'''
 
 
 if __name__ == "__main__":
