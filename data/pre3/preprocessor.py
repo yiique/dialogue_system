@@ -72,9 +72,11 @@ def main_for_statistic():
 
     alias_dict = json.loads(open(kb_alias_file).readline())
     for movie_alias in alias_dict["movies"]:
-        entity[alias_dict["movies"][movie_alias]] = 0
+        for movie_entity in alias_dict["movies"][movie_alias]:
+            entity[movie_entity] = 0
     for actor_alias in alias_dict["actors"]:
-        entity[alias_dict["actors"][actor_alias]] = 0
+        for actor_entity in alias_dict["actors"][actor_alias]:
+            entity[actor_entity] = 0
 
     count = 3
     dictionary = {"<START>": 0, "<END>": 1, "<UNK>": 2}
