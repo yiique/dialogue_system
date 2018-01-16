@@ -70,6 +70,12 @@ def main_for_statistic():
         relation[triple[1]] = 0
     f.close()
 
+    alias_dict = json.loads(open(kb_alias_file).readline())
+    for movie_alias in alias_dict["movies"]:
+        entity[alias_dict["movies"][movie_alias]] = 0
+    for actor_alias in alias_dict["actors"]:
+        entity[alias_dict["actors"][actor_alias]] = 0
+
     count = 3
     dictionary = {"<START>": 0, "<END>": 1, "<UNK>": 2}
     for pair in sort_dictionary:
@@ -99,9 +105,28 @@ def alias_init():
     for alias in movie_alias_dict:
         if len(alias) <= 1 or len(movie_alias_dict[alias]) != 1:
             continue
+        try:
+            if 0 <= int(alias) <= 99999:
+                continue
+        except:
+            pass
         MOVIE_ALIAS_DICT[alias] = movie_alias_dict[alias]
     for alias in actor_alias_dict:
         if len(alias) <= 2 or len(actor_alias_dict[alias]) != 1:
+            continue
+        try:
+            if 0 <= int(alias) <= 99999:
+                continue
+        except:
+            pass
+        eng = True
+        for uchar in alias:
+            if 'a' <= uchar <= 'z':
+                pass
+            else:
+                eng = False
+                break
+        if eng:
             continue
         ACTOR_ALIAS_DICT[alias] = actor_alias_dict[alias]
     print "alias filter done: "
@@ -115,8 +140,9 @@ NAME_PUNC_LIST = [" ", "　", "·", "・"]
 NAME_PUNC_LIST = [x.decode('utf-8') for x in NAME_PUNC_LIST]
 def sentence_processor(string):
     new_string = ""
-    for i in range(1, len(string)-1):
-        if string[i] in NAME_PUNC_LIST and 'a' <= string[i-1] <= 'z' and 'A' <= string[i-1] <= 'Z':
+    for i in range(0, len(string)):
+        if string[i] in NAME_PUNC_LIST and i != 0 and 'a' <= string[i-1] <= 'z' \
+                and i != len(string) - 1 and 'a' <= string[i+1] <= 'z':
             continue
         else:
             new_string += string[i]
@@ -266,6 +292,7 @@ def tokenizer(sentence, entity_related=True):
 
 def main_for_index():
     dictionary = json.loads(open(dictionary_file).readline())
+    alias_init()
 
     f_new = open(multi_index, 'w')
     f_old = open(multi_dia, 'r')
