@@ -35,7 +35,7 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
             self.hyper_params["encoder_layer_num"], self.hyper_params["emb_dim"],
             self.hyper_params["encoder_h_dim"], norm=FLAGS.norm)
         self.kb_scorer = KBscorer.BiKBScorer(
-            self.hyper_params["emb_dim"] + self.hyper_params["hred_h_dim"], FLAGS.candidate_num)
+            self.hyper_params["emb_dim"] + self.hyper_params["hred_h_dim"], self.hyper_params["emb_dim"])
         self.hred = HRED.HRED(self.hyper_params["encoder_h_dim"],
                               self.hyper_params["hred_h_dim"], self.hyper_params["emb_dim"], norm=FLAGS.norm)
         self.decoder = decoder.Decoder(
@@ -202,7 +202,8 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
                                     tgt_utterance, weighted_sum_content, relevant_score)
         prob_ta = prob_ta.write(i, prob)
 
-        return i+1, src_index_ta, tgt_index_ta, turn_mask_ta, src_mask_ta, tgt_mask_ta, can_ta, prob_ta, hred_memory
+        return i+1, src_index_ta, tgt_index_ta, turn_mask_ta, src_mask_ta, tgt_mask_ta, can_ta, prob_ta, \
+            [tgt_utterance, hred_memory]
 
     def build_eval(self):
         # placeholder
