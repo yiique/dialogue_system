@@ -23,8 +23,7 @@ MAX_LEN = 80
 MAX_TURN = 8
 
 
-# Question, Answer, Subject, Predicate, Object, ConfidenceScore
-def main_for_statistic():
+def main_for_statistic(with_cqa=True):
     dictionary = {}
     entity = {}
     relation = {}
@@ -42,18 +41,19 @@ def main_for_statistic():
     print "mul_dia chars: ", len(dictionary)
     f.close()
 
-    num = 15
-    for i in range(0, num):
-        f = open(actor_qa_prefix + str(i))
-        for line in f:
-            info = json.loads(line.strip())
-            string = utils.com2sim(info["question"] + info["question_detail"] + info["answer"])
+    if with_cqa:
+        num = 15
+        for i in range(0, num):
+            f = open(actor_qa_prefix + str(i))
+            for line in f:
+                info = json.loads(line.strip())
+                string = utils.com2sim(info["question"] + info["question_detail"] + info["answer"])
 
-            for char in string:
-                if char not in dictionary:
-                    dictionary[char] = 0
-                dictionary[char] += 1
-        f.close()
+                for char in string:
+                    if char not in dictionary:
+                        dictionary[char] = 0
+                    dictionary[char] += 1
+            f.close()
 
     print "total char: ", len(dictionary)
     sort_dictionary = sorted(dictionary.iteritems(), key=lambda d: d[1], reverse=True)
@@ -153,15 +153,18 @@ def sentence_processor(string):
     return new_string
 
 
-def tokenizer(sentence, entity_related=True):
+def tokenizer(sentence, algorithm='rule_based'):
     """
     :param sentence:  string in unicode
-    :param entity_related:
+    :param algorithm:
+        none:   split by char
+        rule_based:
+        human:
     :return:
     """
-    if not entity_related:
+    if algorithm == 'none':
         return [x for x in sentence]
-    else:
+    elif algorithm == 'rule_based':
         sentence = sentence_processor(sentence)
 
         pos_words = pseg.cut(sentence)
@@ -283,16 +286,33 @@ def tokenizer(sentence, entity_related=True):
         uchars = []
         sens = sentence.split("<ENTITY>")
         for sen in sens:
+            if sen == "":
+                continue
             if "</ENTITY>" not in sen:
                 uchars.extend([x for x in sen])
             else:
                 pair = sen.split("</ENTITY>")
                 uchars.extend([pair[0]])
-                uchars.extend([x for x in pair[1]])
+                if pair[1] != "":
+                    uchars.extend([x for x in pair[1]])
+        return uchars
+    elif algorithm == 'human':
+        uchars = []
+        sens = sentence.split("<ENTITY>")
+        for sen in sens:
+            if sen == "":
+                continue
+            if "</ENTITY>" not in sen:
+                uchars.extend([x for x in sen])
+            else:
+                pair = sen.split("</ENTITY>")
+                uchars.extend([pair[0]])
+                if pair[1] != "":
+                    uchars.extend([x for x in pair[1]])
         return uchars
 
 
-def main_for_index():
+def main_for_index(token_algo='rule_based'):
     dictionary = json.loads(open(dictionary_file).readline())
     alias_init()
 
@@ -320,7 +340,7 @@ def main_for_index():
                 dialogue_key = "tgt_dialogue"
                 mask_key = "tgt_mask"
             sen = sens[i]
-            sen = tokenizer(sen, True)
+            sen = tokenizer(sen, token_algo)
             sample[dialogue_key][int(i/2)][0] = dictionary["<START>"]
             sample[mask_key][int(i/2)][0] = 1
             for j in range(len(sen)):
@@ -351,9 +371,9 @@ def file_split():
     f_test = open(multi_index + ".test", 'w')
     for line in f:
         count += 1
-        if count % 50 == 0:
+        if count % 20 == 0:
             f_valid.write(line)
-        elif count % 50 == 1:
+        elif count % 20 == 1:
             f_test.write(line)
         else:
             f_train.write(line)
@@ -366,5 +386,5 @@ def file_split():
 if __name__ == "__main__":
     # main_for_pre_process()
     main_for_statistic()
-    main_for_index()
+    main_for_index('human')
     file_split()

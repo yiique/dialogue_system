@@ -21,7 +21,7 @@ tf.flags.DEFINE_integer("candidate_num", 300,
                             candidate triples number that been scored, weight of others is zero
                         """)
 tf.flags.DEFINE_integer("common_vocab", 12014, """""")
-tf.flags.DEFINE_integer("entities", 78911, """""")
+tf.flags.DEFINE_integer("entities", 79568, """""")
 tf.flags.DEFINE_integer("relations", 13, """""")
 tf.flags.DEFINE_integer("start_token", 0, """""")
 tf.flags.DEFINE_integer("end_token", 1, """""")
