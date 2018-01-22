@@ -119,6 +119,7 @@ def valid_iter(ep_no, sess, valid_sd, valid_sm, valid_tm, valid_prob, valid_pred
 
         if count % 50 == ep_no % 50:
             tf.logging.info("---------------------<sample>-------------------")
+        f_demo.write("<dialogue>\n")
         for i in range(len(tgt_flatten)):
             src_sentence = src_flatten[i].tolist()
             tgt_sentence = tgt_flatten[i].tolist()
@@ -141,9 +142,9 @@ def valid_iter(ep_no, sess, valid_sd, valid_sm, valid_tm, valid_prob, valid_pred
             f_r.write(" ".join(tgt_tokens) + "\n")
             f_h.write(" ".join(pred_tokens) + "\n")
 
-            f_demo.write("<src>" + " ".join(src_tokens) + "</src>\n")
-            f_demo.write("<tgt>" + " ".join(tgt_tokens) + "</tgt>\n")
-            f_demo.write("<pred>" + " ".join(pred_tokens) + "</pred>\n")
+            f_demo.write("\t<src>" + " ".join(src_tokens) + "</src>\n")
+            f_demo.write("\t<tgt>" + " ".join(tgt_tokens) + "</tgt>\n")
+            f_demo.write("\t<pred>" + " ".join(pred_tokens) + "</pred>\n")
 
             if count % 50 == ep_no % 50:
                 tf.logging.info("<src>" + " ".join(src_tokens) + "</src>\n")
