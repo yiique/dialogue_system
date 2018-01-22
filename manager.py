@@ -1,62 +1,23 @@
 __author__ = 'liushuman'
 
-'''
-# get TF logger
-
-# create formatter and add it to the handlers
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-# create file handler which logs even debug messages
-fh = logging.FileHandler('tensorflow.log')
-fh.setLevel(logging.DEBUG)
-fh.setFormatter(formatter)
-log.addHandler(fh)'''
-
 
 import json
-import logging
 import numpy as np
+import os
 import random
 import sys
+sys.path.append("../..")
 import tensorflow as tf
 import time
 
 
 SEED = 88
-
-
-log = logging.getLogger('tensorflow')
-log.setLevel(logging.DEBUG)
-
 FLAGS = tf.flags.FLAGS
 
-tf.flags.DEFINE_integer("GPU_num", 4, """""")
 
-tf.flags.DEFINE_integer("batch_size", 40, """""")
-tf.flags.DEFINE_integer("beam_size", 10, """""")
-tf.flags.DEFINE_integer("dia_max_len", 10, """""")
-tf.flags.DEFINE_integer("sen_max_len", 60, """""")
-tf.flags.DEFINE_integer("candidate_num", 300,
-                        """
-                            candidate triples number that been scored, weight of others is zero
-                        """)
-tf.flags.DEFINE_integer("common_vocab", 8603, """""")
-tf.flags.DEFINE_integer("entities", 51590, """""")
-tf.flags.DEFINE_integer("relations", 3996, """""")
-tf.flags.DEFINE_integer("start_token", 8601, """""")
-tf.flags.DEFINE_integer("end_token", 8600, """""")
-tf.flags.DEFINE_integer("unk", 8602, """""")
-
-tf.flags.DEFINE_float("grad_clip", 5.0, """""")
-tf.flags.DEFINE_float("learning_rate", 0.001, """""")
-tf.flags.DEFINE_float("penalty_factor", 0.6, """""")
-tf.flags.DEFINE_float("aux_weight", 0.2, """""")
-tf.flags.DEFINE_integer("epoch", 10, """""")
-
-tf.flags.DEFINE_string("weight_path", "./data/corpus1/weight.save", """""")
-
-
-from models import model_bi_gate
+# Change config in configs and model in models to judge model
+from configurations.configs import config_corpus3 as model_config
+from models.model_bi_gate import BiScorerGateDecoderModel as Model
 # TODO: highway, dropout
 
 
@@ -78,32 +39,141 @@ def average_gradients(tower_grads):
     return average_grads
 
 
+def train_iter(ep_no, sess, model, tower_records, avg_loss, tower_losses, update):
+    count = 0
+    losses = []
+    f_train = open(FLAGS.training_path, 'r')
+    while True:
+        try:
+            batches = [[] for _ in range(FLAGS.GPU_num)]
+            for i in range(FLAGS.GPU_num):
+                for j in range(FLAGS.batch_size):
+                    line = f_train.readline()[:-1]
+                    batches[i].append(json.loads(line))
+        except:
+            break
+
+        count += 1
+        if count % 500 == 0:
+            model.save_weight(sess)
+
+        feed_dict = {}
+        for i in range(FLAGS.GPU_num):
+            src_dialogue = np.transpose([sample["src_dialogue"] for sample in batches[i]], [1, 2, 0])
+            tgt_dialogue = np.transpose([sample["tgt_dialogue"] for sample in batches[i]], [1, 2, 0])
+            turn_mask = np.transpose([sample["turn_mask"] for sample in batches[i]], [1, 0])
+            src_mask = np.transpose([sample["src_mask"] for sample in batches[i]], [1, 2, 0])
+            tgt_mask = np.transpose([sample["tgt_mask"] for sample in batches[i]], [1, 2, 0])
+            feed_dict[tower_records[i][0]] = src_dialogue
+            feed_dict[tower_records[i][1]] = src_mask
+            feed_dict[tower_records[i][2]] = turn_mask
+            feed_dict[tower_records[i][3]] = tgt_dialogue
+            feed_dict[tower_records[i][4]] = tgt_mask
+
+        outputs = sess.run([avg_loss, tower_losses, update], feed_dict=feed_dict)
+
+        tf.logging.info("---------------------count-------------------")
+        tf.logging.info(str(ep_no) + "-" + str(count) + "    " + time.ctime())
+        tf.logging.info("---------------------loss-------------------")
+        tf.logging.info(outputs[0])
+        tf.logging.info(outputs[1])
+        losses.append(outputs[0])
+
+    tf.logging.info("============================================================")
+    tf.logging.info("avg loss: " + str(np.mean(losses)))
+    model.save_weight(sess)
+
+
+def valid_iter(ep_no, sess, valid_sd, valid_sm, valid_tm, valid_prob, valid_pred, dictionary):
+    count = 0
+    f_valid = open(FLAGS.valid_path, 'r')
+    f_h = open(FLAGS.valid_hypothesis_path, 'w')
+    f_r = open(FLAGS.valid_reference_path, 'w')
+    f_demo = open(FLAGS.valid_demo_path, 'w')
+
+    for _ in f_valid:
+        sample = json.loads(_[:-1])
+
+        count += 1
+
+        feed_dict = {}
+        src_dialogue = np.transpose([sample["src_dialogue"]], [1, 2, 0])
+        tgt_dialogue = np.transpose([sample["tgt_dialogue"]], [1, 2, 0])
+        src_mask = np.transpose([sample["src_mask"]], [1, 2, 0])
+        turn_mask = np.transpose([sample["turn_mask"]], [1, 0])
+        feed_dict[valid_sd] = src_dialogue
+        feed_dict[valid_sm] = src_mask
+        feed_dict[valid_tm] = turn_mask
+
+        outputs = sess.run([valid_prob, valid_pred], feed_dict=feed_dict)
+        pred_dialogue = outputs[1]
+
+        src_flatten = np.transpose(src_dialogue, [0, 2, 1])
+        src_flatten = [x[0] for x in src_flatten][0: int(sum([y[0] for y in turn_mask]))]
+        tgt_flatten = np.transpose(tgt_dialogue, [0, 2, 1])
+        tgt_flatten = [x[0] for x in tgt_flatten][0: int(sum([y[0] for y in turn_mask]))]
+        pred_flatten = [x[0] for x in pred_dialogue]             # turn_mask * 80
+
+        if len(tgt_flatten) != len(pred_flatten) or len(src_flatten) != len(tgt_flatten):
+            raise AssertionError
+
+        if count % 50 == ep_no % 50:
+            tf.logging.info("---------------------<sample>-------------------")
+        f_demo.write("<dialogue>\n")
+        for i in range(len(tgt_flatten)):
+            src_sentence = src_flatten[i].tolist()
+            tgt_sentence = tgt_flatten[i].tolist()
+            pred_sentence = pred_flatten[i].tolist()
+            se_index = src_sentence.index(FLAGS.end_token)
+            te_index = tgt_sentence.index(FLAGS.end_token)
+            if FLAGS.end_token not in pred_sentence:
+                pe_index = FLAGS.sen_max_len
+            else:
+                pe_index = pred_sentence.index(FLAGS.end_token)
+
+            src_sentence = src_sentence[0: se_index+1]
+            tgt_sentence = tgt_sentence[0: te_index+1]
+            pred_sentence = pred_sentence[0: pe_index+1]
+
+            src_tokens = [dictionary[x].encode('utf-8') for x in src_sentence]
+            tgt_tokens = [dictionary[x].encode('utf-8') for x in tgt_sentence]
+            pred_tokens = [dictionary[x].encode('utf-8') for x in pred_sentence]
+
+            f_r.write(" ".join(tgt_tokens) + "\n")
+            f_h.write(" ".join(pred_tokens) + "\n")
+
+            f_demo.write("\t<src>" + " ".join(src_tokens) + "</src>\n")
+            f_demo.write("\t<tgt>" + " ".join(tgt_tokens) + "</tgt>\n")
+            f_demo.write("\t<pred>" + " ".join(pred_tokens) + "</pred>\n")
+
+            if count % 50 == ep_no % 50:
+                tf.logging.info("<src>" + " ".join(src_tokens) + "</src>\n")
+                tf.logging.info("<tgt>" + " ".join(tgt_tokens) + "</tgt>\n")
+                tf.logging.info("<pred>" + " ".join(pred_tokens) + "</pred>\n")
+        if count % 50 == ep_no % 50:
+            tf.logging.info("---------------------</sample>-------------------")
+
+    f_valid.close()
+    f_r.close()
+    f_h.close()
+    f_demo.close()
+
+    tf.logging.info("Calculating BLEU...")
+    os.system("perl " + FLAGS.multi_bleu_path + " " + FLAGS.valid_reference_path +
+              " < " + FLAGS.valid_hypothesis_path)
+
+
 def main_simple():
-    ################################
-    # step1: Init
-    ################################
     random.seed(SEED)
     np.random.seed(SEED)
 
-    f = open("./data/corpus1/mul_dia.index", 'r')
-
-    hyper_params = {
-        "common_vocab": FLAGS.common_vocab,
-        "kb_vocab": FLAGS.entities + FLAGS.relations,
-
-        "emb_dim": 512,
-        "encoder_layer_num": 1,
-        "encoder_h_dim": 512,
-        "hred_h_dim": 1024,
-        "decoder_gen_layer_num": 1,
-        "decoder_gen_h_dim": 512,
-        "decoder_mlp_layer_num": 3,
-        "decoder_mlp_h_dim": 512
-    }
+    hyper_params = model_config.HYPER_PARAMS
+    dictionary = json.loads(open(FLAGS.dictionary_path).readline())
+    dictionary = {dictionary[key]: key for key in dictionary}
 
     with tf.device('/cpu:0'):
         tf.logging.info("STEP1: Init...")
-        model = model_bi_gate.BiScorerGateDecoderModel(hyper_params=hyper_params)
+        model = Model(hyper_params=hyper_params)
 
         tower_records = []
         tf.logging.info("STEP2: Map/Reduce...")
@@ -112,7 +182,7 @@ def main_simple():
                 tf.logging.info('Building tower:%d...' % gpu_id)
                 with tf.name_scope('tower_%d' % gpu_id):
                     with tf.variable_scope('cpu_variables', reuse=gpu_id > 0):
-                        s_d, s_m, turn_m, t_d, t_m, loss_simple, grad_simple = model.build_tower()
+                        s_d, s_m, turn_m, t_d, t_m, _, loss_simple, grad_simple, _, _ = model.build_tower()
                         tower_records.append(
                             (s_d, s_m, turn_m, t_d, t_m, loss_simple, grad_simple))
 
@@ -120,7 +190,7 @@ def main_simple():
         avg_loss = tf.reduce_mean(tower_losses)
         update = model.optimizer.apply_gradients(average_gradients(tower_grads))
 
-        t_sd, t_sm, prob, pred = model.build_eval()
+        valid_sd, valid_sm, valid_tm, valid_prob, valid_pred = model.build_eval()
 
         config = tf.ConfigProto(allow_soft_placement=True)
         config.gpu_options.allow_growth = True
@@ -133,91 +203,12 @@ def main_simple():
             tf.logging.warning("NO WEIGHT FILE, INIT FROM BEGINNING...")
 
         tf.logging.info("STEP3: Training...")
-        losses = []
-        count = 0
-        stop_control = 200000
         for ep in range(FLAGS.epoch):
-            while True:
-                try:
-                    batches = [[] for _ in range(FLAGS.GPU_num)]
-                    for i in range(FLAGS.GPU_num):
-                        for j in range(FLAGS.batch_size):
-                            line = f.readline()[:-1]
-                            batches[i].append(json.loads(line))
-                except:
-                    tf.logging.info("============================================================")
-                    tf.logging.info("avg loss: " + str(np.mean(losses)))
-                    model.save_weight(sess)
-                    f.seek(0)
-                    count = 0
-                    losses = []
-                    break
+            train_iter(ep, sess, model, tower_records, avg_loss, tower_losses, update)
 
-                count += 1
-                if count % 500 == 0:
-                    model.save_weight(sess, "." + str(ep) + "-" + str(count))
-                if count == stop_control:
-                    tf.logging.info("==avg: " + str(np.mean(losses)))
-                    f.seek(0)
-                    count = 0
-                    losses = []
-                    break
-
-                feed_dict = {}
-                for i in range(FLAGS.GPU_num):
-                    src_dialogue = np.transpose([sample["src_dialogue"] for sample in batches[i]], [1, 2, 0])
-                    tgt_dialogue = np.transpose([sample["tgt_dialogue"] for sample in batches[i]], [1, 2, 0])
-                    turn_mask = np.transpose([sample["turn_mask"] for sample in batches[i]], [1, 0])
-                    src_mask = np.transpose([sample["src_mask"] for sample in batches[i]], [1, 2, 0])
-                    tgt_mask = np.transpose([sample["tgt_mask"] for sample in batches[i]], [1, 2, 0])
-                    feed_dict[tower_records[i][0]] = src_dialogue
-                    feed_dict[tower_records[i][1]] = src_mask
-                    feed_dict[tower_records[i][2]] = turn_mask
-                    feed_dict[tower_records[i][3]] = tgt_dialogue
-                    feed_dict[tower_records[i][4]] = tgt_mask
-
-                outputs = sess.run([avg_loss, tower_losses, update], feed_dict=feed_dict)
-
-                tf.logging.info("---------------------count-------------------")
-                tf.logging.info(str(ep) + "-" + str(count) + "    " + time.ctime())
-                tf.logging.info("---------------------loss-------------------")
-                tf.logging.info(outputs[0])
-                tf.logging.info(outputs[1])
-                losses.append(outputs[0])
-
-            model.save_weight(sess)
-
-        tf.logging.info("STEP3: Evaluating...")
-        count = 0
-        for _ in range(0, stop_control-1):
-            try:
-                batch = []
-                for j in range(1):
-                    line = f.readline()[:-1]
-                    batch.append(json.loads(line))
-            except:
-                tf.logging.ERROR("TESTING LOADING ERROR!")
-
-            count += 1
-
-            feed_dict = {}
-            src_dialogue = np.transpose([sample["src_dialogue"] for sample in batch], [1, 2, 0])
-            src_mask = np.transpose([sample["src_mask"] for sample in batch], [1, 2, 0])
-            tgt_dialogue = np.transpose([sample["tgt_dialogue"] for sample in batch], [1, 2, 0])
-            feed_dict[t_sd] = src_dialogue
-            feed_dict[t_sm] = src_mask
-
-            outputs = sess.run([prob, pred], feed_dict=feed_dict)
-
-            tf.logging.info("---------------------count-------------------")
-            tf.logging.info(str(_) + "-" + str(count) + "    " + time.ctime())
-            tf.logging.info("---------------------src-------------------")
-            tf.logging.info(src_dialogue)
-            tf.logging.info("---------------------tgt-------------------")
-            tf.logging.info(tgt_dialogue)
-            tf.logging.info("---------------------pred-------------------")
-            tf.logging.info(outputs[0])
-            tf.logging.info(outputs[1])
+            if ep % 5 == 0:
+                tf.logging.info("STEP4: Evaluating...")
+                valid_iter(ep, sess, valid_sd, valid_sm, valid_tm, valid_prob, valid_pred, dictionary)
 
 
 if __name__ == "__main__":

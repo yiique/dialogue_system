@@ -19,11 +19,12 @@ FLAGS = tf.flags.FLAGS
 
 
 class Decoder(graph_base.GraphBase):
-    def __init__(self, gen_params, score_params, mlp_params, d_type="MASK",
+    def __init__(self, gen_params, score_params, mlp_params, d_type="MASK", norm=False,
                  hyper_params=None, params=None):
         graph_base.GraphBase.__init__(self, hyper_params, params)
 
         self.hyper_params["decoder_type"] = d_type
+        self.hyper_params["norm"] = norm
 
         self.hyper_params["gen_nn_layer_num"] = gen_params[0]
         self.hyper_params["gen_nn_in_dim"] = gen_params[1]
@@ -300,11 +301,11 @@ class Decoder(graph_base.GraphBase):
                 if i == 0:
                     lstm = graph_base.LSTM(
                         self.hyper_params["score_nn_in_dim"], self.hyper_params["score_nn_h_dim"],
-                        self.hyper_params["score_nn_c_dim"])
+                        self.hyper_params["score_nn_c_dim"], norm=self.hyper_params["norm"])
                 else:
                     lstm = graph_base.LSTM(
                         self.hyper_params["score_nn_h_dim"], self.hyper_params["score_nn_h_dim"],
-                        self.hyper_params["score_nn_c_dim"])
+                        self.hyper_params["score_nn_c_dim"], norm=self.hyper_params["norm"])
                 self.score_lstms.append(lstm)
                 self.params.extend(lstm.params)
             self.w_score_lr = graph_base.get_params([self.hyper_params["score_nn_h_dim"],
@@ -318,11 +319,11 @@ class Decoder(graph_base.GraphBase):
             if i == 0:
                 lstm = graph_base.LSTM(
                     self.hyper_params["gen_nn_in_dim"], self.hyper_params["gen_nn_h_dim"],
-                    self.hyper_params["gen_nn_c_dim"])
+                    self.hyper_params["gen_nn_c_dim"], norm=self.hyper_params["norm"])
             else:
                 lstm = graph_base.LSTM(
                     self.hyper_params["gen_nn_h_dim"], self.hyper_params["gen_nn_h_dim"],
-                    self.hyper_params["gen_nn_c_dim"])
+                    self.hyper_params["gen_nn_c_dim"], norm=self.hyper_params["norm"])
             self.gen_lstms.append(lstm)
             self.params.extend(lstm.params)
         self.w_gen_lr = graph_base.get_params([self.hyper_params["gen_nn_h_dim"], self.hyper_params["gen_nn_o_dim"]])
@@ -455,7 +456,7 @@ class Decoder(graph_base.GraphBase):
 
 
 class AuxDecoder(graph_base.GraphBase):
-    def __init__(self, gen_params, hyper_params=None, params=None):
+    def __init__(self, gen_params, norm=False, hyper_params=None, params=None):
         graph_base.GraphBase.__init__(self, hyper_params, params)
 
         self.hyper_params["gen_nn_layer_num"] = gen_params[0]
@@ -463,6 +464,7 @@ class AuxDecoder(graph_base.GraphBase):
         self.hyper_params["gen_nn_h_dim"] = gen_params[2]
         self.hyper_params["gen_nn_c_dim"] = gen_params[3]
         self.hyper_params["gen_nn_o_dim"] = gen_params[4]
+        self.hyper_params["norm"] = norm
 
         self.gen_unit = self.create_unit()
 
@@ -561,11 +563,11 @@ class AuxDecoder(graph_base.GraphBase):
             if i == 0:
                 lstm = graph_base.LSTM(
                     self.hyper_params["gen_nn_in_dim"], self.hyper_params["gen_nn_h_dim"],
-                    self.hyper_params["gen_nn_c_dim"])
+                    self.hyper_params["gen_nn_c_dim"], norm=self.hyper_params["norm"])
             else:
                 lstm = graph_base.LSTM(
                     self.hyper_params["gen_nn_h_dim"], self.hyper_params["gen_nn_h_dim"],
-                    self.hyper_params["gen_nn_c_dim"])
+                    self.hyper_params["gen_nn_c_dim"], norm=self.hyper_params["norm"])
             self.gen_lstms.append(lstm)
             self.params.extend(lstm.params)
         self.w_gen_lr = graph_base.get_params([self.hyper_params["gen_nn_h_dim"], self.hyper_params["gen_nn_o_dim"]])

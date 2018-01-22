@@ -18,7 +18,7 @@ from nn_components import decoder
 FLAGS = tf.flags.FLAGS
 
 
-class BiScorerGateDecoderModel(graph_base.GraphBase):
+class BiScorerTREDGateDecoderModel(graph_base.GraphBase):
     """
     """
     def __init__(self, hyper_params=None, params=None):
@@ -28,15 +28,15 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
         tf.logging.info("============================================================")
         tf.logging.info("BUILDING NETWORK...")
 
-        self.hyper_params["model_type"] = "Bilinear Scorer & Gate Decoder"
+        self.hyper_params["model_type"] = "Bilinear Scorer & HRED with TGT Utterance & Gate Decoder"
         self.embedding = graph_base.get_params([self.hyper_params["common_vocab"] + self.hyper_params["kb_vocab"],
                                                 self.hyper_params["emb_dim"]])
         self.encoder = encoder.Encoder(
             self.hyper_params["encoder_layer_num"], self.hyper_params["emb_dim"],
             self.hyper_params["encoder_h_dim"], norm=FLAGS.norm)
         self.kb_scorer = KBscorer.BiKBScorer(
-            self.hyper_params["emb_dim"] + self.hyper_params["hred_h_dim"], self.hyper_params["emb_dim"])
-        self.hred = HRED.HRED(self.hyper_params["encoder_h_dim"],
+            self.hyper_params["emb_dim"] + self.hyper_params["hred_h_dim"], FLAGS.candidate_num)
+        self.hred = HRED.HRED(self.hyper_params["encoder_h_dim"] + self.hyper_params["hred_h_dim"],  # encoder & decoder
                               self.hyper_params["hred_h_dim"], self.hyper_params["emb_dim"], norm=FLAGS.norm)
         self.decoder = decoder.Decoder(
             [self.hyper_params["decoder_gen_layer_num"], self.hyper_params["emb_dim"],
@@ -48,17 +48,11 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
                  self.hyper_params["decoder_mlp_h_dim"], 2],
             d_type="MASK", norm=FLAGS.norm, hyper_params=None, params=None)
 
-        # self.aux_decoder = decoder.AuxDecoder(
-        #     [self.hyper_params["decoder_gen_layer_num"], self.hyper_params["emb_dim"],
-        #      self.hyper_params["decoder_gen_h_dim"], self.hyper_params["encoder_h_dim"],
-        #      FLAGS.common_vocab + FLAGS.candidate_num])
-
         self.print_params()
         self.encoder.print_params()
         self.kb_scorer.print_params()
         self.hred.print_params()
         self.decoder.print_params()
-        # self.aux_decoder.print_params()
 
         self.params = [self.embedding] + self.encoder.params + self.kb_scorer.params + \
                        self.hred.params + self.decoder.params
@@ -71,7 +65,7 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
 
         self.params_dia = [self.embedding] + self.encoder.params + self.hred.params + self.decoder.params
         self.params_qa = [self.embedding] + self.encoder.params + self.kb_scorer.params + \
-                         self.hred.params + self.decoder.params
+                          self.hred.params + self.decoder.params
 
     def build_tower(self):
         # placeholder
@@ -87,24 +81,26 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
         candidates = tf.placeholder(dtype=tf.float32, shape=[
             FLAGS.dia_max_len, FLAGS.batch_size, FLAGS.candidate_num, 2])
 
+        part_tgt_mask = tf.concat([tf.zeros([1, FLAGS.sen_max_len, FLAGS.batch_size]),
+                                   tf.ones([FLAGS.dia_max_len-1, FLAGS.sen_max_len, FLAGS.batch_size])], 0) * tgt_mask
         prob_dia = self.train_forward_dia(src_dialogue, tgt_dialogue, turn_mask, src_mask, tgt_mask)
         train_loss_dia = -tf.reduce_mean(
             tf.reduce_sum(tf.reduce_sum(
                 tf.one_hot(tf.to_int32(tgt_dialogue), FLAGS.common_vocab + FLAGS.candidate_num, 1.0, 0.0) *
-                tf.log(tf.clip_by_value(prob_dia, 1e-20, 1.0)), -1) * tgt_mask, [0, 1])
+                tf.log(tf.clip_by_value(prob_dia, 1e-20, 1.0)), -1) * part_tgt_mask, [0, 1])
         )
         train_grad_dia = self.optimizer.compute_gradients(train_loss_dia, self.params_dia)
 
-        prob_qa = self.train_forward_qa(src_dialogue, tgt_dialogue, turn_mask, src_mask, tgt_mask, candidates)
+        '''prob_qa = self.train_forward_qa(src_dialogue, tgt_dialogue, turn_mask, src_mask, tgt_mask, candidates)
         train_loss_qa = -tf.reduce_mean(
             tf.reduce_sum(tf.reduce_sum(
                 tf.one_hot(tf.to_int32(tgt_dialogue), FLAGS.common_vocab + FLAGS.candidate_num, 1.0, 0.0) *
                 tf.log(tf.clip_by_value(prob_qa, 1e-20, 1.0)), -1) * tgt_mask, [0, 1])
         )
-        train_grad_qa = self.optimizer.compute_gradients(train_loss_qa, self.params_qa)
+        train_grad_qa = self.optimizer.compute_gradients(train_loss_qa, self.params_qa)'''
 
         return src_dialogue, src_mask, turn_mask, tgt_dialogue, tgt_mask, candidates, \
-               train_loss_dia, train_grad_dia, train_loss_qa, train_grad_qa
+               train_loss_dia, train_grad_dia, 0, 0
 
     def train_forward_dia(self, src_dialogue, tgt_dialogue, turn_mask, src_mask, tgt_mask):
         src_index_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).\
@@ -143,8 +139,9 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
         src_utterance = self.encoder.forward(src_emb, src_mask)[-1]
         relevant_score = tf.zeros([FLAGS.batch_size, FLAGS.candidate_num])
         weighted_sum_content = tf.zeros([FLAGS.batch_size, self.hyper_params["emb_dim"]])
+        tgt_utterance_tm1 = hred_cell_tm1[0]
         tgt_utterance, hred_memory = self.hred.lstm.step_with_content(
-            src_utterance,
+            tf.concat([tgt_utterance_tm1, src_utterance], 1),
             tf.expand_dims(turn_mask, -1),
             weighted_sum_content, hred_cell_tm1)
         prob = self.decoder.forward(tf.expand_dims(tgt_index, -1),
@@ -202,8 +199,7 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
                                     tgt_utterance, weighted_sum_content, relevant_score)
         prob_ta = prob_ta.write(i, prob)
 
-        return i+1, src_index_ta, tgt_index_ta, turn_mask_ta, src_mask_ta, tgt_mask_ta, can_ta, prob_ta, \
-            [tgt_utterance, hred_memory]
+        return i+1, src_index_ta, tgt_index_ta, turn_mask_ta, src_mask_ta, tgt_mask_ta, can_ta, prob_ta, hred_memory
 
     def build_eval(self):
         # placeholder
@@ -249,8 +245,9 @@ class BiScorerGateDecoderModel(graph_base.GraphBase):
         src_utterance = self.encoder.forward(src_emb, src_mask, 1)[-1]
         relevant_score = tf.zeros([1, FLAGS.candidate_num])
         weighted_sum_content = tf.zeros([1, self.hyper_params["emb_dim"]])
+        tgt_utterance_tm1 = hred_cell_tm1[0]
         tgt_utterance, hred_memory = self.hred.lstm.step_with_content(
-            src_utterance,
+            tf.concat([tgt_utterance_tm1, src_utterance], 1),
             tf.expand_dims(turn_mask, -1),
             weighted_sum_content, hred_cell_tm1)
         prob, pred = self.decoder.forward_with_beam(

@@ -35,13 +35,14 @@ class GraphBase(object):
 
 
 class LSTM(GraphBase):
-    def __init__(self, in_dim, h_dim, c_dim=None, hyper_params=None, params=None):
+    def __init__(self, in_dim, h_dim, c_dim=None, norm=False, hyper_params=None, params=None):
         GraphBase.__init__(self, hyper_params, params)
         self.hyper_params["in_dim"] = in_dim
         self.hyper_params["h_dim"] = h_dim
         self.hyper_params["c_dim"] = c_dim
+        self.hyper_params["norm"] = norm
 
-        self.recurrent_unit = self.create_recurrent_unit(c_dim)
+        self.recurrent_unit = self.create_recurrent_unit(c_dim, norm)
 
     def step(self, x_t, x_m_t, cell_tm1):
         """
@@ -100,29 +101,21 @@ class LSTM(GraphBase):
         hidden_ta = hidden_ta.stack()
         return hidden_ta
 
-    def create_recurrent_unit(self, con=False):
+    def create_recurrent_unit(self, con=False, norm=False):
         self.W_i = get_params([self.hyper_params["in_dim"], self.hyper_params["h_dim"]])
         self.U_i = get_params([self.hyper_params["h_dim"], self.hyper_params["h_dim"]])
-        self.b_i = get_params([self.hyper_params["h_dim"]])
 
         self.W_f = get_params([self.hyper_params["in_dim"], self.hyper_params["h_dim"]])
         self.U_f = get_params([self.hyper_params["h_dim"], self.hyper_params["h_dim"]])
-        self.b_f = get_params([self.hyper_params["h_dim"]])
 
         self.W_o = get_params([self.hyper_params["in_dim"], self.hyper_params["h_dim"]])
         self.U_o = get_params([self.hyper_params["h_dim"], self.hyper_params["h_dim"]])
-        self.b_o = get_params([self.hyper_params["h_dim"]])
 
         self.W_c = get_params([self.hyper_params["in_dim"], self.hyper_params["h_dim"]])
         self.U_c = get_params([self.hyper_params["h_dim"], self.hyper_params["h_dim"]])
-        self.b_c = get_params([self.hyper_params["h_dim"]])
 
         self.params.extend([
-            self.W_i, self.U_i, self.b_i,
-            self.W_f, self.U_f, self.b_f,
-            self.W_o, self.U_o, self.b_o,
-            self.W_c, self.U_c, self.b_c
-        ])
+            self.W_i, self.U_i, self.W_f, self.U_f, self.W_o, self.U_o, self.W_c, self.U_c])
 
         if con:
             self.V_i = get_params([self.hyper_params["c_dim"], self.hyper_params["h_dim"]])
@@ -130,6 +123,20 @@ class LSTM(GraphBase):
             self.V_o = get_params([self.hyper_params["c_dim"], self.hyper_params["h_dim"]])
             self.V_c = get_params([self.hyper_params["c_dim"], self.hyper_params["h_dim"]])
             self.params.extend([self.V_i, self.V_f, self.V_o, self.V_c])
+
+        if norm:
+            self.gate_norm_layer = NormalizationLayer(self.hyper_params["h_dim"], 4)
+            self.hidden_norm_layer = NormalizationLayer(self.hyper_params["h_dim"], 1)
+            self.gate_norm_unit = self.gate_norm_layer.norm_unit
+            self.hidden_norm_unit = self.hidden_norm_layer.norm_unit
+
+            self.params.extend(self.gate_norm_layer.params + self.hidden_norm_layer.params)
+        else:
+            self.b_i = get_params([self.hyper_params["h_dim"]])
+            self.b_f = get_params([self.hyper_params["h_dim"]])
+            self.b_o = get_params([self.hyper_params["h_dim"]])
+            self.b_c = get_params([self.hyper_params["h_dim"]])
+            self.params.extend([self.b_i, self.b_f, self.b_o, self.b_c])
 
         def unit(x, x_m, cell_tm1):
             """
@@ -140,25 +147,30 @@ class LSTM(GraphBase):
             """
             hidden_tm1, memory_tm1 = cell_tm1
 
-            # Input Gate
-            i = tf.sigmoid(tf.matmul(x, self.W_i) + tf.matmul(hidden_tm1, self.U_i) + self.b_i)
+            _i = tf.matmul(x, self.W_i) + tf.matmul(hidden_tm1, self.U_i)
+            _f = tf.matmul(x, self.W_f) + tf.matmul(hidden_tm1, self.U_f)
+            _o = tf.matmul(x, self.W_o) + tf.matmul(hidden_tm1, self.U_o)
+            _memory = tf.matmul(x, self.W_c) + tf.matmul(hidden_tm1, self.U_c)
 
-            # Forget Gate
-            f = tf.sigmoid(tf.matmul(x, self.W_f) + tf.matmul(hidden_tm1, self.U_f) + self.b_f)
+            if self.hyper_params["norm"]:
+                _i, _f, _o, _memory = tf.split(self.gate_norm_unit(tf.concat([_i, _f, _o, _memory], 1)), 4, 1)
+            else:
+                _i += self.b_i
+                _f += self.b_f
+                _o += self.b_o
+                _memory += self.b_c
 
-            # Output Gate
-            o = tf.sigmoid(tf.matmul(x, self.W_o) + tf.matmul(hidden_tm1, self.U_o) + self.b_o)
+            i = tf.sigmoid(_i)
+            f = tf.sigmoid(_f)
+            o = tf.sigmoid(_o)
+            _memory = tf.nn.tanh(_memory)
 
-            # Candidate memory
-            memory_ = tf.nn.tanh(tf.matmul(x, self.W_c) + tf.matmul(hidden_tm1, self.U_c) + self.b_c)
+            memory = f * memory_tm1 + i * _memory
+            if self.hyper_params["norm"]:
+                hidden = o * tf.nn.tanh(self.hidden_norm_unit(memory))
+            else:
+                hidden = o * tf.nn.tanh(memory)
 
-            # Memory Cell
-            memory = f * memory_tm1 + i * memory_
-
-            # Hidden
-            hidden = o * tf.nn.tanh(memory)
-
-            # Mask
             memory = x_m * memory + (1. - x_m) * memory_tm1
             hidden = x_m * hidden + (1. - x_m) * hidden_tm1
 
@@ -174,27 +186,29 @@ class LSTM(GraphBase):
             """
             hidden_tm1, memory_tm1 = cell_tm1
 
-            # Input Gate
-            i = tf.sigmoid(
-                tf.matmul(x, self.W_i) + tf.matmul(hidden_tm1, self.U_i) + tf.matmul(content, self.V_i) + self.b_i)
+            _i = tf.matmul(x, self.W_i) + tf.matmul(hidden_tm1, self.U_i) + tf.matmul(content, self.V_i)
+            _f = tf.matmul(x, self.W_f) + tf.matmul(hidden_tm1, self.U_f) + tf.matmul(content, self.V_f)
+            _o = tf.matmul(x, self.W_o) + tf.matmul(hidden_tm1, self.U_o) + tf.matmul(content, self.V_o)
+            _memory = tf.matmul(x, self.W_c) + tf.matmul(hidden_tm1, self.U_c) + tf.matmul(content, self.V_c)
 
-            # Forget Gate
-            f = tf.sigmoid(
-                tf.matmul(x, self.W_f) + tf.matmul(hidden_tm1, self.U_f) + tf.matmul(content, self.V_f) + self.b_f)
+            if self.hyper_params["norm"]:
+                _i, _f, _o, _memory = tf.split(self.gate_norm_unit(tf.concat([_i, _f, _o, _memory], 1)), 4, 1)
+            else:
+                _i += self.b_i
+                _f += self.b_f
+                _o += self.b_o
+                _memory += self.b_c
 
-            # Output Gate
-            o = tf.sigmoid(
-                tf.matmul(x, self.W_o) + tf.matmul(hidden_tm1, self.U_o) + tf.matmul(content, self.V_o) + self.b_o)
+            i = tf.sigmoid(_i)
+            f = tf.sigmoid(_f)
+            o = tf.sigmoid(_o)
+            _memory = tf.nn.tanh(_memory)
 
-            # Candidate memory
-            memory_ = tf.nn.tanh(
-                tf.matmul(x, self.W_c) + tf.matmul(hidden_tm1, self.U_c) + tf.matmul(content, self.V_c) + self.b_c)
-
-            # Memory Cell
-            memory = f * memory_tm1 + i * memory_
-
-            # Hidden
-            hidden = o * tf.nn.tanh(memory)
+            memory = f * memory_tm1 + i * _memory
+            if self.hyper_params["norm"]:
+                hidden = o * tf.nn.tanh(self.hidden_norm_unit(memory))
+            else:
+                hidden = o * tf.nn.tanh(memory)
 
             # Mask
             memory = x_m * memory + (1. - x_m) * memory_tm1
@@ -205,6 +219,44 @@ class LSTM(GraphBase):
         if not con:
             return unit
         return unit_with_content
+
+
+class NormalizationLayer(GraphBase):
+    def __init__(self, in_dim, unit_num=1):
+        GraphBase.__init__(self)
+
+        self.hyper_params["in_dim"] = in_dim
+        self.hyper_params["unit_num"] = unit_num
+        self.norm_unit = self.create_norm_unit()
+
+    def create_norm_unit(self):
+        self.gain = get_params([1, self.hyper_params["in_dim"] * self.hyper_params["unit_num"]])
+        self.bias = get_params([self.hyper_params["in_dim"] * self.hyper_params["unit_num"]])
+
+        self.params.extend([self.gain, self.bias])
+
+        def unit(inputs, epsilon=0.001):
+            """
+            layer normalization for RNN
+            :param inputs: concat of inputs for activate function in one layer in size * in_dim
+            :return:
+            """
+            input_list = tf.split(inputs, self.hyper_params["unit_num"], 1)
+            gain_list = tf.split(self.gain, self.hyper_params["unit_num"], 1)
+            bias_list = tf.split(self.bias, self.hyper_params["unit_num"], 0)
+            output_list = []
+
+            for i in range(self.hyper_params["unit_num"]):
+                input_i = input_list[i]
+                mean = tf.reduce_mean(input_i, 1, keep_dims=True)
+                variance = tf.sqrt(tf.reduce_mean(tf.square(input_i - mean), axis=1, keep_dims=True) + epsilon)
+                output_i = (gain_list[i] * (input_i - mean)) / variance + bias_list[i]
+
+                output_list.append(output_i)
+
+            return tf.concat(output_list, 1)
+
+        return unit
 
 
 class CNN(GraphBase):

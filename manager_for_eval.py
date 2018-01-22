@@ -1,92 +1,45 @@
 __author__ = 'liushuman'
 
-'''
-# get TF logger
-
-# create formatter and add it to the handlers
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-
-# create file handler which logs even debug messages
-fh = logging.FileHandler('tensorflow.log')
-fh.setLevel(logging.DEBUG)
-fh.setFormatter(formatter)
-log.addHandler(fh)'''
-
 
 import json
-import logging
 import numpy as np
+import os
 import random
+import re
+import subprocess
 import sys
+sys.path.append("../..")
 import tensorflow as tf
 import time
 
 
 SEED = 88
-
-
-log = logging.getLogger('tensorflow')
-log.setLevel(logging.DEBUG)
-
 FLAGS = tf.flags.FLAGS
 
-tf.flags.DEFINE_integer("GPU_num", 4, """""")
 
-tf.flags.DEFINE_integer("batch_size", 1,
-                        """batch_size for eval should be 1 at a time""")
-tf.flags.DEFINE_integer("beam_size", 10, """""")
-tf.flags.DEFINE_integer("dia_max_len", 10, """""")
-tf.flags.DEFINE_integer("sen_max_len", 60, """""")
-tf.flags.DEFINE_integer("candidate_num", 300,
-                        """
-                            candidate triples number that been scored, weight of others is zero
-                        """)
-tf.flags.DEFINE_integer("common_vocab", 8603, """""")
-tf.flags.DEFINE_integer("entities", 51590, """""")
-tf.flags.DEFINE_integer("relations", 3996, """""")
-tf.flags.DEFINE_integer("start_token", 8601, """""")
-tf.flags.DEFINE_integer("end_token", 8600, """""")
-tf.flags.DEFINE_integer("unk", 8602, """""")
-
-tf.flags.DEFINE_float("grad_clip", 5.0, """""")
-tf.flags.DEFINE_float("learning_rate", 0.001, """""")
-tf.flags.DEFINE_float("penalty_factor", 0.6, """""")
-tf.flags.DEFINE_integer("epoch", 1, """""")
-
-tf.flags.DEFINE_string("weight_path", "./data/corpus1/weight.save", """""")
-
-
-from models import model_bi_gate
+from configurations.configs import config_corpus3 as model_config
+from models.model_bi_gate import BiScorerGateDecoderModel as Model
 # TODO: highway, dropout
 
 
-def main_simple():
-    ################################
-    # step1: Init
-    ################################
+def main_eval():
     random.seed(SEED)
     np.random.seed(SEED)
 
     tf.logging.info("STEP1: Init...")
-    f = open("./data/corpus1/mul_dia.index", 'r')
+    f = open(FLAGS.valid_path, 'r')
 
-    hyper_params = {
-        "common_vocab": FLAGS.common_vocab,
-        "kb_vocab": FLAGS.entities + FLAGS.relations,
+    f_h = open(FLAGS.valid_hypothesis_path, 'w')
+    f_r = open(FLAGS.valid_reference_path, 'w')
+    f_demo = open(FLAGS.valid_demo_path, 'w')
 
-        "emb_dim": 512,
-        "encoder_layer_num": 1,
-        "encoder_h_dim": 512,
-        "hred_h_dim": 1024,
-        "decoder_gen_layer_num": 1,
-        "decoder_gen_h_dim": 512,
-        "decoder_mlp_layer_num": 3,
-        "decoder_mlp_h_dim": 512
-    }
+    hyper_params = model_config.HYPER_PARAMS
+    dictionary = json.loads(open(FLAGS.dictionary_path).readline())
+    dictionary = {dictionary[key]: key for key in dictionary}
 
-    with tf.device('/cpu:0'):
-        model = model_bi_gate.BiScorerGateDecoderModel(hyper_params=hyper_params)
-        s_d, s_m, prob, pred = model.build_eval()
+    with tf.device('/gpu:0'):
+        model = Model(hyper_params=hyper_params)
+        s_d, s_m, t_m, prob, pred = model.build_eval()
 
         config = tf.ConfigProto(allow_soft_placement=True)
         config.gpu_options.allow_growth = True
@@ -98,42 +51,87 @@ def main_simple():
         except:
             tf.logging.warning("NO WEIGHT FILE, INIT FROM BEGINNING...")
 
-        tf.logging.info("STEP2: Training...")
+        tf.logging.info("STEP2: Evaling...")
         count = 0
-        for _ in range(FLAGS.epoch):
-                # while True:
-                try:
-                    batch = []
-                    for j in range(FLAGS.batch_size):
-                        line = f.readline()[:-1]
-                        batch.append(json.loads(line))
-                except:
-                    f.seek(0)
-                    break
+        for _ in f:
+            sample = json.loads(_[:-1])
 
-                count += 1
-                if count == 2:
-                    break
+            count += 1
+            # if count == 10:
+            #     break
 
-                feed_dict = {}
-                src_dialogue = np.transpose([sample["src_dialogue"] for sample in batch], [1, 2, 0])
-                tgt_dialogue = np.transpose([sample["tgt_dialogue"] for sample in batch], [1, 2, 0])
-                src_mask = np.transpose([sample["src_mask"] for sample in batch], [1, 2, 0])
-                feed_dict[s_d] = src_dialogue
-                feed_dict[s_m] = src_mask
+            feed_dict = {}
+            src_dialogue = np.transpose([sample["src_dialogue"]], [1, 2, 0])
+            tgt_dialogue = np.transpose([sample["tgt_dialogue"]], [1, 2, 0])
+            src_mask = np.transpose([sample["src_mask"]], [1, 2, 0])
+            turn_mask = np.transpose([sample["turn_mask"]], [1, 0])
+            feed_dict[s_d] = src_dialogue
+            feed_dict[s_m] = src_mask
+            feed_dict[t_m] = turn_mask
 
-                outputs = sess.run([prob, pred], feed_dict=feed_dict)
-                # pred_tgt = outputs[0]
+            outputs = sess.run([prob, pred], feed_dict=feed_dict)
+            pred_dialogue = outputs[1]
 
-                tf.logging.info("---------------------src-------------------")
-                print src_dialogue
-                tf.logging.info("---------------------tgt-------------------")
-                print tgt_dialogue
-                tf.logging.info("---------------------pred-------------------")
-                print outputs[0]
-                print outputs[1]
-                break
+            src_flatten = np.transpose(src_dialogue, [0, 2, 1])
+            src_flatten = [x[0] for x in src_flatten][0: int(sum([y[0] for y in turn_mask]))]
+            tgt_flatten = np.transpose(tgt_dialogue, [0, 2, 1])
+            tgt_flatten = [x[0] for x in tgt_flatten][0: int(sum([y[0] for y in turn_mask]))]
+            pred_flatten = [x[0] for x in pred_dialogue]             # turn_mask * 80
+
+            if len(tgt_flatten) != len(pred_flatten) or len(src_flatten) != len(tgt_flatten):
+                raise AssertionError
+
+            for i in range(len(tgt_flatten)):
+                src_sentence = src_flatten[i].tolist()
+                tgt_sentence = tgt_flatten[i].tolist()
+                pred_sentence = pred_flatten[i].tolist()
+                se_index = src_sentence.index(FLAGS.end_token)
+                te_index = tgt_sentence.index(FLAGS.end_token)
+                if FLAGS.end_token not in pred_sentence:
+                    pe_index = FLAGS.sen_max_len
+                else:
+                    pe_index = pred_sentence.index(FLAGS.end_token)
+
+                src_sentence = src_sentence[0: se_index+1]
+                tgt_sentence = tgt_sentence[0: te_index+1]
+                pred_sentence = pred_sentence[0: pe_index+1]
+
+                src_tokens = [dictionary[x].encode('utf-8') for x in src_sentence]
+                tgt_tokens = [dictionary[x].encode('utf-8') for x in tgt_sentence]
+                pred_tokens = [dictionary[x].encode('utf-8') for x in pred_sentence]
+
+                f_r.write(" ".join(tgt_tokens) + "\n")
+                f_h.write(" ".join(pred_tokens) + "\n")
+
+                f_demo.write("<src>" + " ".join(src_tokens) + "</src>\n")
+                f_demo.write("<tgt>" + " ".join(tgt_tokens) + "</tgt>\n")
+                f_demo.write("<pred>" + " ".join(pred_tokens) + "</pred>\n")
+
+        f_r.close()
+        f_h.close()
+
+        tf.logging.info("STEP3: Calculating BLEU...")
+        os.system("perl " + FLAGS.multi_bleu_path + " " + FLAGS.valid_reference_path +
+                  " < " + FLAGS.valid_hypothesis_path)
+
+        '''with open(FLAGS.valid_hypothesis_path, 'r') as read_pred:
+            bleu_cmd = [FLAGS.multi_bleu_path]
+            bleu_cmd += [FLAGS.valid_reference_path]
+            try:
+                bleu_out = subprocess.check_output(
+                    bleu_cmd, stdin=read_pred, stderr=subprocess.STDOUT
+                )
+                bleu_out = bleu_out.decode("utf-8")
+                bleu_score = re.search(r"BLEU = (.+?),", bleu_out).group(1)
+                bleu_score = float(bleu_score)
+                print "BLEU:"
+            except subprocess.CalledProcessError as error:
+                if error.output is not None:
+                    print "ERROR IN CAL BLEU:", error.output
+                bleu_score = np.float32(0.0)
+
+        print "BLEU score: ", np.float32(bleu_score)'''
 
 
 if __name__ == "__main__":
-    main_simple()
+    main_eval()
