@@ -59,6 +59,7 @@ class Decoder(graph_base.GraphBase):
         forward with golden including start and end token
         :param x_pred: max_len * size * 1
         :param x_emb: max_len * size * e_dim
+                    Note emb according to true indices, x_pred here is fake indices
         :param x_m: max_len * size * 1
         :param utterance: size * hred_h_dim
         :param weighted_sum_content: size * e_dim

@@ -69,7 +69,8 @@ class CNNEncoder(graph_base.GraphBase):
 
     def forward(self, x):
         """
-        :param x: input in max_len * batch_size * in_dim(here is embedding + position, element-wise according to gnmt)
+        :param x: input in max_len * batch_size * in_dim
+                  (here is embedding + position, element-wise according to gnmt)
         :return: hidden in batch_size * h_dim
         """
         hidden = tf.expand_dims(tf.transpose(x, perm=[1, 0, 2]), -1)

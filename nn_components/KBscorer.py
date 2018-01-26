@@ -5,7 +5,40 @@ import graph_base
 import tensorflow as tf
 
 
+from tensorflow.python.ops import tensor_array_ops, control_flow_ops
+
+
 FLAGS = tf.flags.FLAGS
+
+
+class CandidateSeeker():
+    def __init__(self, emb_dim):
+        self.emb_dim = emb_dim
+        self.seeker = self.create_seeker()
+
+    def create_seeker(self):
+
+        def unit(representation, embedding, size=FLAGS.batch_size):
+            """
+            :param representation: size * emb_dim
+            :param embedding:
+            :return: can indices in batch_size * emb_candidate_num
+            """
+            knowledge_embedding = tf.slice(embedding, [FLAGS.common_vocab, 0],
+                                           [FLAGS.entities, self.emb_dim])
+            embedding_distance = tf.reduce_sum(
+                tf.square(
+                    tf.tile(
+                        tf.expand_dims(representation, 1),
+                        [1, FLAGS.entities, 1]) - knowledge_embedding),
+                -1)                                                         # size * entities
+            similarity = 0. - embedding_distance
+            _, top_indices = tf.nn.top_k(similarity, k=FLAGS.emb_candidate_num)
+            entity_indices = top_indices + FLAGS.common_vocab
+
+            return entity_indices
+
+        return unit
 
 
 class BiKBScorer(graph_base.GraphBase):
@@ -44,6 +77,158 @@ class BiKBScorer(graph_base.GraphBase):
             return score, sum_content
 
         return unit
+
+
+class KBRetriever(graph_base.GraphBase):
+    def __init__(self, emb_dim, o_encoder_h_dim, hred_h_dim,
+                 encoder_layer_num, encoder_kernel_size, encoder_h_dim,
+                 enquirer_mlp_layer_num, enquirer_mlp_h_dim,
+                 diffuser_mlp_layer_num, diffuser_mlp_h_dim,
+                 scorer_mlp_layer_num, scorer_mlp_h_dim,
+                 hyper_params=None, params=None):
+        graph_base.GraphBase.__init__(self, hyper_params, params)
+
+        self.hyper_params["model_type"] = "Diffuse Kb Retriever"
+        self.hyper_params["emb_dim"] = emb_dim
+        self.hyper_params["o_encoder_h_dim"] = o_encoder_h_dim
+        self.hyper_params["hred_h_dim"] = hred_h_dim
+
+        self.hyper_params["encoder_layer_num"] = encoder_layer_num
+        self.hyper_params["encoder_kernel_size"] = encoder_kernel_size
+        self.hyper_params["encoder_h_dim"] = encoder_h_dim
+
+        self.hyper_params["enquirer_mlp_layer_num"] = enquirer_mlp_layer_num
+        self.hyper_params["enquirer_mlp_in_dim"] = self.hyper_params["emb_dim"] + self.hyper_params["encoder_h_dim"]
+        self.hyper_params["enquirer_mlp_h_dim"] = enquirer_mlp_h_dim
+
+        self.hyper_params["diffuser_mlp_layer_num"] = diffuser_mlp_layer_num
+        self.hyper_params["diffuser_mlp_in_dim"] = self.hyper_params["emb_dim"] + self.hyper_params["hred_h_dim"] + \
+                                                   self.hyper_params["encoder_h_dim"] + self.hyper_params["emb_dim"]
+        self.hyper_params["diffuser_mlp_h_dim"] = diffuser_mlp_h_dim
+
+        self.hyper_params["scorer_mlp_layer_num"] = scorer_mlp_layer_num
+        self.hyper_params["scorer_mlp_in_dim"] = self.hyper_params["hred_h_dim"] + self.hyper_params["o_encoder_h_dim"]\
+                                                 + FLAGS.enquire_can_num + FLAGS.diffuser_can_num
+        self.hyper_params["scorer_mlp_h_dim"] = scorer_mlp_h_dim
+
+        self.enquirer_unit, self.diffuser_unit, self.scorer_unit = self.create_retriever()
+
+    def create_retriever(self):
+        self.knowledge_encoder = encoder.CNNEncoder(
+            self.hyper_params["encoder_layer_num"], self.hyper_params["encoder_kernel_size"],
+            self.hyper_params["emb_dim"], self.hyper_params["encoder_h_dim"])
+        self.params.extend(self.knowledge_encoder.params)
+
+        self.enquirer_perceptrons = []
+        for i in range(self.hyper_params["enquirer_mlp_layer_num"]):
+            if i == 0:
+                w = graph_base.get_params(
+                    [self.hyper_params["enquirer_mlp_in_dim"], self.hyper_params["enquirer_mlp_h_dim"]])
+            elif i == self.hyper_params["enquirer_mlp_layer_num"] - 1:
+                w = graph_base.get_params(
+                    [self.hyper_params["enquirer_mlp_h_dim"], 1])
+            else:
+                w = graph_base.get_params(
+                    [self.hyper_params["enquirer_mlp_h_dim"], self.hyper_params["enquirer_mlp_h_dim"]])
+            self.enquirer_perceptrons.append([w])
+            self.params.extend([w])
+
+        self.diffuse_perceptrons = []
+        for i in range(self.hyper_params["diffuser_mlp_layer_num"]):
+            if i == 0:
+                w = graph_base.get_params(
+                    [self.hyper_params["diffuser_mlp_in_dim"], self.hyper_params["diffuser_mlp_h_dim"]])
+            elif i == self.hyper_params["diffuser_mlp_layer_num"] - 1:
+                w = graph_base.get_params([
+                    self.hyper_params["diffuser_mlp_h_dim"], 1])
+            else:
+                w = graph_base.get_params(
+                    [self.hyper_params["diffuser_mlp_h_dim"], self.hyper_params["diffuser_mlp_h_dim"]])
+            self.diffuse_perceptrons.append([w])
+            self.params.extend([w])
+
+        self.score_perceptrons = []
+        for i in range(self.hyper_params["scorer_mlp_layer_num"]):
+            if i == 0:
+                w = graph_base.get_params(
+                    [self.hyper_params["scorer_mlp_in_dim"], self.hyper_params["scorer_mlp_h_dim"]])
+            elif i == self.hyper_params["scorer_mlp_layer_num"] - 1:
+                w = graph_base.get_params(
+                    [self.hyper_params["scorer_mlp_h_dim"], FLAGS.enquire_can_num + FLAGS.diffuse_can_num])
+            else:
+                w = graph_base.get_params(
+                    [self.hyper_params["scorer_mlp_h_dim"], self.hyper_params["scorer_mlp_h_dim"]])
+            self.score_perceptrons.append([w])
+            self.params.extend([w])
+
+        def enquirer_unit(src_with_position, enquire_strings_avg, size=FLAGS.batch_size):
+            """
+            :param src_with_position: src embedding with position in max_len * size * emb_dim
+            :param enquire_strings_avg: e_c_embedding avg in size * enquire_can_num * emb_dim
+                                        note its char embeddings rather than entity embedding here
+            :return:
+            """
+            knowledge_utterance = self.knowledge_encoder.forward(src_with_position)         # size * h_dim
+            hidden = tf.concat([tf.tile(tf.expand_dims(knowledge_utterance, 1), [1, FLAGS.enquire_can_num, 1]),
+                                enquire_strings_avg], 2)                                    # size * e_c_num * e+h_dim
+            for i in range(self.hyper_params["enquirer_mlp_layer_num"]):
+                layer = self.enquirer_perceptrons[i][0]
+                hidden = tf.sigmoid(tf.matmul(hidden, tf.tile(tf.expand_dims(layer, 0), [size, 1, 1])))
+            enquire_score = tf.squeeze(hidden)                                              # size * e_c_num
+
+            return knowledge_utterance, enquire_score
+
+        def diffuse_unit(hred_hidden_tm1, knowledge_utterance,
+                         enquire_entities_sum, embedding):
+            """
+            :param hred_hidden_tm1: size * hred_h_dim
+            :param knowledge_utterance: size * encoder_dim
+            :param enquire_entities_sum: size * emb_dim
+                                        its entity embeddings avg here
+            :param embedding: total_embedding in (words + entities + relations + positions)
+            :return:
+            """
+            # TODO: change to entity size in loop body
+            entity_embedding = tf.slice(embedding, [FLAGS.common_vocab, 0],
+                                        [FLAGS.entities, self.hyper_params["emb_dim"]])  # entities_num * emb_dim
+
+            hidden = tf.concat([hred_hidden_tm1, knowledge_utterance, enquire_entities_sum], 1)
+            hidden_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).unstack(hidden)
+            prob_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+
+            def _loop_body(i, hidden_ta, prob_ta, entity_embedding):
+                hidden_t = hidden_ta.read(i)
+                hidden_t = tf.concat([tf.tile(tf.expand_dims(hidden_t, 0), [FLAGS.entities, 1]), entity_embedding],
+                                     1)                                                 # entities_num * (sum_len)
+
+                for j in range(self.hyper_params["diffuser_mlp_layer_num"]):
+                    layer = self.diffuse_perceptrons[j][0]
+                    hidden_t = tf.sigmoid(tf.matmul(hidden_t, layer))
+
+                prob_ta = prob_ta.write(i, tf.squeeze(hidden_t))
+                return i+1, hidden_ta, prob_ta, entity_embedding
+
+            _, _, prob_ta, _ = control_flow_ops.while_loop(
+                cond=lambda i, _1, _2, _3: i < hidden_ta.size(),
+                body=_loop_body,
+                loop_vars=(
+                    tf.constant(0, tf.int32),
+                    hidden_ta, prob_ta, entity_embedding)
+            )
+
+            prob = prob_ta.stack()                                                      # size * entity_num
+            prob_topk, indices_topk = tf.nn.top_k(prob, FLAGS.diffuse_can_num, sorted=True)    # size * d_c_num
+            return prob, prob_topk, indices_topk + FLAGS.common_vocab
+
+        def score_unit(hred_hidden_tm1, src_utterance, enquirer_score, diffuse_score):
+            hidden = tf.concat([hred_hidden_tm1, src_utterance, enquirer_score, diffuse_score], 1)
+            for i in range(self.hyper_params["scorer_mlp_layer_num"]):
+                layer = self.score_perceptrons[i][0]
+                hidden = tf.sigmoid(tf.matmul(hidden, layer))
+
+            return hidden                                       # size * e+d_c_num
+
+        return enquirer_unit, diffuse_unit, score_unit
 
 
 class CNNKBScorer(graph_base.GraphBase):
