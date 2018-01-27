@@ -22,7 +22,7 @@ tf.flags.DEFINE_integer("enquire_can_num", 250, """""")
 tf.flags.DEFINE_integer("diffuse_can_num", 50, """""")
 tf.flags.DEFINE_integer("candidate_num", 300, """""")
 tf.flags.DEFINE_integer("common_vocab", 2894, """""")
-tf.flags.DEFINE_integer("entities", 29460, """""")
+tf.flags.DEFINE_integer("entities", 29490, """""")
 tf.flags.DEFINE_integer("relations", 2, """""")
 
 tf.flags.DEFINE_integer("start_token", 0, """""")
