@@ -70,19 +70,19 @@ def train_iter(ep, sess, model, tower_records,
         for i in range(FLAGS.dia_max_len):
             feed_dict = {}
             for j in range(FLAGS.GPU_num):
-                src = np.transpose([sample[j][i]["src"] for sample in batches])
-                src_mask = np.transpose([sample[j][i]["src_mask"] for sample in batches])
-                tgt_indices = np.transpose([sample[j][i]["tgt_indices"] for sample in batches])
-                tgt = np.transpose([sample[j][i]["tgt"] for sample in batches])
-                tgt_mask = np.transpose([sample[j][i]["tgt_mask"] for sample in batches])
-                turn_mask = [sample[j][i]["turn_mask"] for sample in batches]
-                enquire_strings = [sample[j][i]["enquire_strings"] for sample in batches]
-                enquire_entities = [sample[j][i]["enquire_entities"] for sample in batches]
-                enquire_mask = [sample[j][i]["enquire_mask"] for sample in batches]
-                enquire_score_golden = [sample[j][i]["enquire_score_golden"] for sample in batches]
-                diffuse_golden = [sample[j][i]["diffuse_golden"] for sample in batches]
-                diffuse_mask = [sample[j][i]["diffuse_mask"] for sample in batches]
-                retriever_score_golden = [sample[j][i]["retriever_score_golden"] for sample in batches]
+                src = np.transpose([sample[i]["src"] for sample in batches[j]])
+                src_mask = np.transpose([sample[i]["src_mask"] for sample in batches[j]])
+                tgt_indices = np.transpose([sample[i]["tgt_indices"] for sample in batches[j]])
+                tgt = np.transpose([sample[i]["tgt"] for sample in batches[j]])
+                tgt_mask = np.transpose([sample[i]["tgt_mask"] for sample in batches[j]])
+                turn_mask = [sample[i]["turn_mask"] for sample in batches[j]]
+                enquire_strings = [sample[i]["enquire_strings"] for sample in batches[j]]
+                enquire_entities = [sample[i]["enquire_entities"] for sample in batches[j]]
+                enquire_mask = [sample[i]["enquire_mask"] for sample in batches[j]]
+                enquire_score_golden = [sample[i]["enquire_score_golden"] for sample in batches[j]]
+                diffuse_golden = [sample[i]["diffuse_golden"] for sample in batches[j]]
+                diffuse_mask = [sample[i]["diffuse_mask"] for sample in batches[j]]
+                retriever_score_golden = [sample[i]["retriever_score_golden"] for sample in batches[j]]
 
                 feed_dict[tower_records[j][0]] = src
                 feed_dict[tower_records[j][1]] = src_mask
@@ -167,7 +167,7 @@ def valid_iter(ep_no, sess, valid_params, dictionary):
 
             src_flatten = np.transpose(src).tolist()[0][0: int(sum(x[0] for x in src_mask))]
             tgt_flatten = tgt_indices[0: int(sum(tgt_mask))]
-            pred_flatten = pred_sentence[0]
+            pred_flatten = pred_sentence[0].tolist()
             for j in range(len(pred_flatten)):
                 if FLAGS.common_vocab <= pred_flatten[j] < FLAGS.common_vocab + FLAGS.enquire_can_num:
                     pred_flatten[j] = enquire_objs[pred_flatten[j] - FLAGS.common_vocab][0]
@@ -234,7 +234,7 @@ def main_simple():
         avg_losses_beta = tf.reduce_mean(tower_losses_beta)
         avg_losses_gamma = tf.reduce_mean(tower_losses_gamma)
         avg_losses_decoder = tf.reduce_mean(tower_losses_decoder)
-        avg_losses = tf.reduce_mean = tf.reduce_mean(tower_losses)
+        avg_losses = tf.reduce_mean(tower_losses)
         update = model.optimizer.apply_gradients(average_gradients(tower_grads))
 
         valid_params = model.build_eval()
