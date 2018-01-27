@@ -2,3 +2,23 @@
 *.pyc
 
 *.xml
+
+data/corpus3/part.index.test
+
+data/corpus3/dictionary
+
+data/corpus3/part.index.train
+
+data/corpus3/part.index.valid
+
+data/corpus3/part.kb.alias
+
+data/corpus3/part.kb.triples
+
+data/corpus3/part.raw
+
+data/corpus3/part.raw.test
+
+data/corpus3/part.raw.train
+
+data/corpus3/part.raw.valid

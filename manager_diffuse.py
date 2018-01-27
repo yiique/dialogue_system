@@ -174,6 +174,89 @@ def main_simple():
         model = Model(hyper_params=hyper_params)
 
         train_params = model.build_tower()
+        print len(train_params)
+        test_params = model.build_eval()
+        print len(test_params)
+
+        config = tf.ConfigProto(allow_soft_placement=True)
+        sess = tf.Session(config=config)
+        sess.run(tf.global_variables_initializer())
+
+        f_train = open(FLAGS.training_path, 'r')
+        batches = []
+        count = 0
+        while True:
+            try:
+                batches = []
+                for i in range(FLAGS.batch_size):
+                    line = f_train.readline().strip()
+                    batches.append(json.loads(line))
+            except:
+                break
+
+            hred_hidden_tm1 = [[0.0 for _ in range(1024)] for __ in range(len(batches))]
+            hred_memory_tm1 = [[0.0 for _ in range(1024)] for __ in range(len(batches))]
+            dialogue_loss = [0.0 for _ in range(5)]
+            print "dialogue"
+            for i in range(FLAGS.dia_max_len):
+                src = np.transpose([sample[i]["src"] for sample in batches])
+                src_mask = np.transpose([sample[i]["src_mask"] for sample in batches])
+                tgt_indices = np.transpose([sample[i]["tgt_indices"] for sample in batches])
+                tgt = np.transpose([sample[i]["tgt"] for sample in batches])
+                tgt_mask = np.transpose([sample[i]["tgt_mask"] for sample in batches])
+                turn_mask = [sample[i]["turn_mask"] for sample in batches]
+                enquire_strings = [sample[i]["enquire_strings"] for sample in batches]
+                enquire_entities = [sample[i]["enquire_entities"] for sample in batches]
+                enquire_mask = [sample[i]["enquire_mask"] for sample in batches]
+                enquire_score_golden = [sample[i]["enquire_score_golden"] for sample in batches]
+                diffuse_golden = [sample[i]["diffuse_golden"] for sample in batches]
+                diffuse_mask = [sample[i]["diffuse_mask"] for sample in batches]
+                retriever_score_golden = [sample[i]["retriever_score_golden"] for sample in batches]
+                # hred_hidden_tm1 = [[0.0 for _ in range(1024)] for __ in range(len(batches))]
+                # hred_memory_tm1 = [[0.0 for _ in range(1024)] for __ in range(len(batches))]
+                # print "src_mask"
+                # print len(src_mask), len(src_mask[0])
+
+                feed_dict = {}
+                feed_dict[train_params[0]] = src
+                feed_dict[train_params[1]] = src_mask
+                feed_dict[train_params[2]] = tgt_indices
+                feed_dict[train_params[3]] = tgt
+                feed_dict[train_params[4]] = tgt_mask
+                feed_dict[train_params[5]] = turn_mask
+                feed_dict[train_params[6]] = enquire_strings
+                feed_dict[train_params[7]] = enquire_entities
+                feed_dict[train_params[8]] = enquire_mask
+                feed_dict[train_params[9]] = enquire_score_golden
+                feed_dict[train_params[10]] = diffuse_golden
+                feed_dict[train_params[11]] = diffuse_mask
+                feed_dict[train_params[12]] = retriever_score_golden
+                feed_dict[train_params[13]] = hred_hidden_tm1
+                feed_dict[train_params[14]] = hred_memory_tm1
+
+                loss1, loss2, loss3, loss4, loss, grad, hidden_t, memory_t = sess.run(
+                    [train_params[15], train_params[16], train_params[17], train_params[18], train_params[19],
+                     train_params[20], train_params[21], train_params[22]], feed_dict)
+
+                hred_hidden_tm1 = hidden_t
+                hred_memory_tm1 = memory_t
+
+                print "sentence_result"
+                print loss1, loss2, loss3, loss4, loss, time.ctime()
+                dialogue_loss[0] += loss1
+                dialogue_loss[1] += loss2
+                dialogue_loss[2] += loss3
+                dialogue_loss[3] += loss4
+                dialogue_loss[4] += loss
+                print "grad"
+                print grad
+                print "hidden/memory"
+                print hred_hidden_tm1, hred_memory_tm1
+            print "dialogue_result"
+            print [x/5.0 for x in dialogue_loss]
+            count += 1
+            if count == 2:
+                exit(0)
 
 
 

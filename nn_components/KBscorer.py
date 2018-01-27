@@ -108,7 +108,7 @@ class KBRetriever(graph_base.GraphBase):
 
         self.hyper_params["scorer_mlp_layer_num"] = scorer_mlp_layer_num
         self.hyper_params["scorer_mlp_in_dim"] = self.hyper_params["hred_h_dim"] + self.hyper_params["o_encoder_h_dim"]\
-                                                 + FLAGS.enquire_can_num + FLAGS.diffuser_can_num
+                                                 + FLAGS.enquire_can_num + FLAGS.diffuse_can_num
         self.hyper_params["scorer_mlp_h_dim"] = scorer_mlp_h_dim
 
         self.enquirer_unit, self.diffuser_unit, self.scorer_unit = self.create_retriever()
@@ -174,7 +174,7 @@ class KBRetriever(graph_base.GraphBase):
             for i in range(self.hyper_params["enquirer_mlp_layer_num"]):
                 layer = self.enquirer_perceptrons[i][0]
                 hidden = tf.sigmoid(tf.matmul(hidden, tf.tile(tf.expand_dims(layer, 0), [size, 1, 1])))
-            enquire_score = tf.squeeze(hidden)                                              # size * e_c_num
+            enquire_score = tf.reduce_sum(hidden, -1)                                              # size * e_c_num
 
             return knowledge_utterance, enquire_score
 

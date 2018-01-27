@@ -82,6 +82,8 @@ class CNNEncoder(graph_base.GraphBase):
             if i > 0:
                 conv += hidden
             hidden = cnn.activate_unit(conv)
-        final_state = self.cnns[-1].pooling_unit(hidden)
+            hidden = cnn.pooling_unit(hidden)
+
+        final_state = tf.reduce_mean(hidden, [1, 3])
 
         return final_state

@@ -294,10 +294,10 @@ class CNN(GraphBase):
         def pooling_unit(hidden):
             """
             mean pooling in the highest layer
-            :param hidden: highest layer hidden in batch_size * len * width * 1
-            :return: pooling state in batch_size * width
+            :param hidden: highest layer hidden in batch_size * len * width * units
+            :return: pooling state in batch_size * len * width * 1
             """
-            final_state = tf.squeeze(tf.reduce_mean(hidden, 1))
-            return final_state
+            pooling_state = tf.reduce_max(hidden, -1, keep_dims=True)
+            return pooling_state
 
         return convolutional_unit, activate_unit, pooling_unit
