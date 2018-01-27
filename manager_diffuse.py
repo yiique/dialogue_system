@@ -39,7 +39,9 @@ def average_gradients(tower_grads):
     return average_grads
 
 
-def train_iter(ep_no, sess, model, tower_records, avg_loss, tower_losses, update):
+def train_iter(ep, sess, model, tower_records,
+               avg_losses_alpha, avg_losses_beta, avg_losses_gamma, avg_losses_decoder, avg_losses,
+               tower_losses, update):
     count = 0
     losses = []
     f_train = open(FLAGS.training_path, 'r')
@@ -57,113 +59,146 @@ def train_iter(ep_no, sess, model, tower_records, avg_loss, tower_losses, update
         if count % 500 == 0:
             model.save_weight(sess)
 
-        feed_dict = {}
-        for i in range(FLAGS.GPU_num):
-            src_dialogue = np.transpose([sample["src_dialogue"] for sample in batches[i]], [1, 2, 0])
-            tgt_dialogue = np.transpose([sample["tgt_dialogue"] for sample in batches[i]], [1, 2, 0])
-            turn_mask = np.transpose([sample["turn_mask"] for sample in batches[i]], [1, 0])
-            src_mask = np.transpose([sample["src_mask"] for sample in batches[i]], [1, 2, 0])
-            tgt_mask = np.transpose([sample["tgt_mask"] for sample in batches[i]], [1, 2, 0])
-            feed_dict[tower_records[i][0]] = src_dialogue
-            feed_dict[tower_records[i][1]] = src_mask
-            feed_dict[tower_records[i][2]] = turn_mask
-            feed_dict[tower_records[i][3]] = tgt_dialogue
-            feed_dict[tower_records[i][4]] = tgt_mask
-
-        outputs = sess.run([avg_loss, tower_losses, update], feed_dict=feed_dict)
+        hred_hiddens = [[[0.0 for _ in range(model_config.HYPER_PARAMS["hred_h_dim"])]
+                        for __ in range(FLAGS.batch_size)] for __ in range(FLAGS.GPU_num)]
+        hred_memorys = [[[0.0 for _ in range(model_config.HYPER_PARAMS["hred_h_dim"])]
+                        for __ in range(FLAGS.batch_size)] for __ in range(FLAGS.GPU_num)]
+        dialogue_losses = []
 
         tf.logging.info("---------------------count-------------------")
-        tf.logging.info(str(ep_no) + "-" + str(count) + "    " + time.ctime())
-        tf.logging.info("---------------------loss-------------------")
-        tf.logging.info(outputs[0])
-        tf.logging.info(outputs[1])
-        losses.append(outputs[0])
+        tf.logging.info(str(ep) + "-" + str(count) + "    " + time.ctime())
+        for i in range(FLAGS.dia_max_len):
+            feed_dict = {}
+            for j in range(FLAGS.GPU_num):
+                src = np.transpose([sample[j][i]["src"] for sample in batches])
+                src_mask = np.transpose([sample[j][i]["src_mask"] for sample in batches])
+                tgt_indices = np.transpose([sample[j][i]["tgt_indices"] for sample in batches])
+                tgt = np.transpose([sample[j][i]["tgt"] for sample in batches])
+                tgt_mask = np.transpose([sample[j][i]["tgt_mask"] for sample in batches])
+                turn_mask = [sample[j][i]["turn_mask"] for sample in batches]
+                enquire_strings = [sample[j][i]["enquire_strings"] for sample in batches]
+                enquire_entities = [sample[j][i]["enquire_entities"] for sample in batches]
+                enquire_mask = [sample[j][i]["enquire_mask"] for sample in batches]
+                enquire_score_golden = [sample[j][i]["enquire_score_golden"] for sample in batches]
+                diffuse_golden = [sample[j][i]["diffuse_golden"] for sample in batches]
+                diffuse_mask = [sample[j][i]["diffuse_mask"] for sample in batches]
+                retriever_score_golden = [sample[j][i]["retriever_score_golden"] for sample in batches]
+
+                feed_dict[tower_records[j][0]] = src
+                feed_dict[tower_records[j][1]] = src_mask
+                feed_dict[tower_records[j][2]] = tgt_indices
+                feed_dict[tower_records[j][3]] = tgt
+                feed_dict[tower_records[j][4]] = tgt_mask
+                feed_dict[tower_records[j][5]] = turn_mask
+                feed_dict[tower_records[j][6]] = enquire_strings
+                feed_dict[tower_records[j][7]] = enquire_entities
+                feed_dict[tower_records[j][8]] = enquire_mask
+                feed_dict[tower_records[j][9]] = enquire_score_golden
+                feed_dict[tower_records[j][10]] = diffuse_golden
+                feed_dict[tower_records[j][11]] = diffuse_mask
+                feed_dict[tower_records[j][12]] = retriever_score_golden
+                feed_dict[tower_records[j][13]] = hred_hiddens[j]
+                feed_dict[tower_records[j][14]] = hred_memorys[j]
+
+            outputs = sess.run([
+                avg_losses_alpha, avg_losses_beta, avg_losses_gamma, avg_losses_decoder, avg_losses,
+                tower_losses, update], feed_dict=feed_dict)
+
+            tf.logging.info("-  -  -  -  -  -  sentence_loss %d -  -  -  -  -  -" % i)
+            tf.logging.info(str(outputs[0]) + "\t/\t" + str(outputs[1]) + "\t/\t" + str(outputs[2]) +
+                            "\t/\t" + str(outputs[3]) + "\t/\t" + str(outputs[4]))
+            tf.logging.info(outputs[5])
+            dialogue_losses.append(outputs[4])
+
+        dialogue_loss = np.mean(dialogue_losses)
+        tf.logging.info("---------------------dialogue_loss-------------------")
+        tf.logging.info(dialogue_loss)
+        losses.append(dialogue_loss)
 
     tf.logging.info("============================================================")
     tf.logging.info("avg loss: " + str(np.mean(losses)))
     model.save_weight(sess)
 
 
-def valid_iter(ep_no, sess, valid_sd, valid_sm, valid_tm, valid_prob, valid_pred, dictionary):
+def valid_iter(ep_no, sess, valid_params, dictionary):
     count = 0
     f_valid = open(FLAGS.valid_path, 'r')
-    f_h = open(FLAGS.valid_hypothesis_path, 'w')
-    f_r = open(FLAGS.valid_reference_path, 'w')
     f_demo = open(FLAGS.valid_demo_path, 'w')
 
     for _ in f_valid:
-        sample = json.loads(_[:-1])
+        sample = json.loads(_.strip())
 
         count += 1
 
-        feed_dict = {}
-        src_dialogue = np.transpose([sample["src_dialogue"]], [1, 2, 0])
-        tgt_dialogue = np.transpose([sample["tgt_dialogue"]], [1, 2, 0])
-        src_mask = np.transpose([sample["src_mask"]], [1, 2, 0])
-        turn_mask = np.transpose([sample["turn_mask"]], [1, 0])
-        feed_dict[valid_sd] = src_dialogue
-        feed_dict[valid_sm] = src_mask
-        feed_dict[valid_tm] = turn_mask
+        hred_hiddens = [[0.0 for _ in range(model_config.HYPER_PARAMS["hred_h_dim"])]]
+        hred_memorys = [[0.0 for _ in range(model_config.HYPER_PARAMS["hred_h_dim"])]]
 
-        outputs = sess.run([valid_prob, valid_pred], feed_dict=feed_dict)
-        pred_dialogue = outputs[1]
-
-        src_flatten = np.transpose(src_dialogue, [0, 2, 1])
-        src_flatten = [x[0] for x in src_flatten][0: int(sum([y[0] for y in turn_mask]))]
-        tgt_flatten = np.transpose(tgt_dialogue, [0, 2, 1])
-        tgt_flatten = [x[0] for x in tgt_flatten][0: int(sum([y[0] for y in turn_mask]))]
-        pred_flatten = [x[0] for x in pred_dialogue]             # turn_mask * 80
-
-        if len(tgt_flatten) != len(pred_flatten) or len(src_flatten) != len(tgt_flatten):
-            raise AssertionError
-
-        if count % 50 == ep_no % 50:
-            tf.logging.info("---------------------<sample>-------------------")
         f_demo.write("<dialogue>\n")
-        for i in range(len(tgt_flatten)):
-            src_sentence = src_flatten[i].tolist()
-            tgt_sentence = tgt_flatten[i].tolist()
-            pred_sentence = pred_flatten[i].tolist()
-            se_index = src_sentence.index(FLAGS.end_token)
-            te_index = tgt_sentence.index(FLAGS.end_token)
-            if FLAGS.end_token not in pred_sentence:
-                pe_index = FLAGS.sen_max_len
+        if count % 25 == ep_no % 25:
+            tf.logging.info("---------------------<sample>-------------------\n")
+        for i in range(FLAGS.dia_max_len):
+            feed_dict = {}
+
+            src = np.transpose([sample[i]["src"]])
+            src_mask = np.transpose([sample[i]["src_mask"]])
+            tgt_indices = sample[i]["tgt_indices"]
+            tgt_mask = sample[i]["tgt_mask"]
+            turn_mask = [sample[i]["turn_mask"]]
+            enquire_strings = [sample[i]["enquire_strings"]]
+            enquire_entities = [sample[i]["enquire_entities"]]
+            enquire_mask = [sample[i]["enquire_mask"]]
+            enquire_objs = sample[i]["enquire_objs"]
+
+            if int(turn_mask[0]) == 0:
+                break
+
+            feed_dict[valid_params[0]] = src
+            feed_dict[valid_params[1]] = src_mask
+            feed_dict[valid_params[2]] = turn_mask
+            feed_dict[valid_params[3]] = enquire_strings
+            feed_dict[valid_params[4]] = enquire_entities
+            feed_dict[valid_params[5]] = enquire_mask
+            feed_dict[valid_params[6]] = hred_hiddens
+            feed_dict[valid_params[7]] = hred_memorys
+
+            outputs = sess.run([valid_params[9], valid_params[11], valid_params[12]], feed_dict=feed_dict)
+            diffuse_indices = outputs[1][0]
+            pred_sentence = outputs[2]          # beam_size * max_len
+
+            src_flatten = np.transpose(src).tolist()[0][0: int(sum(x[0] for x in src_mask))]
+            tgt_flatten = tgt_indices[0: int(sum(tgt_mask))]
+            pred_flatten = pred_sentence[0]
+            for j in range(len(pred_flatten)):
+                if FLAGS.common_vocab <= pred_flatten[j] < FLAGS.common_vocab + FLAGS.enquire_can_num:
+                    pred_flatten[j] = enquire_objs[pred_flatten[j] - FLAGS.common_vocab][0]
+                elif FLAGS.common_vocab + FLAGS.enquire_can_num <= pred_flatten[j]:
+                    pred_flatten[j] = diffuse_indices[pred_flatten[j] - FLAGS.common_vocab - FLAGS.enquire_can_num]
+            if FLAGS.end_token not in pred_flatten:
+                pass
             else:
-                pe_index = pred_sentence.index(FLAGS.end_token)
-
-            src_sentence = src_sentence[0: se_index+1]
-            tgt_sentence = tgt_sentence[0: te_index+1]
-            pred_sentence = pred_sentence[0: pe_index+1]
-
-            src_tokens = [dictionary[x].encode('utf-8') for x in src_sentence]
-            tgt_tokens = [dictionary[x].encode('utf-8') for x in tgt_sentence]
-            pred_tokens = [dictionary[x].encode('utf-8') for x in pred_sentence]
-
-            f_r.write(" ".join(tgt_tokens) + "\n")
-            f_h.write(" ".join(pred_tokens) + "\n")
+                pred_flatten = pred_flatten[0: pred_flatten.index(FLAGS.end_token)]
+            src_tokens = [dictionary[x].encode('utf-8') for x in src_flatten]
+            tgt_tokens = [dictionary[x].encode('utf-8') for x in tgt_flatten]
+            pred_tokens = [dictionary[x].encode('utf-8') for x in pred_flatten]
 
             f_demo.write("\t<src>" + " ".join(src_tokens) + "</src>\n")
             f_demo.write("\t<tgt>" + " ".join(tgt_tokens) + "</tgt>\n")
             f_demo.write("\t<pred>" + " ".join(pred_tokens) + "</pred>\n")
 
-            if count % 50 == ep_no % 50:
+            if count % 25 == ep_no % 25:
                 tf.logging.info("<src>" + " ".join(src_tokens) + "</src>\n")
                 tf.logging.info("<tgt>" + " ".join(tgt_tokens) + "</tgt>\n")
                 tf.logging.info("<pred>" + " ".join(pred_tokens) + "</pred>\n")
-        if count % 50 == ep_no % 50:
-            tf.logging.info("---------------------</sample>-------------------")
+        if count % 25 == ep_no % 25:
+            tf.logging.info("---------------------</sample>-------------------\n")
 
     f_valid.close()
-    f_r.close()
-    f_h.close()
     f_demo.close()
-
-    tf.logging.info("Calculating BLEU...")
-    os.system("perl " + FLAGS.multi_bleu_path + " " + FLAGS.valid_reference_path +
-              " < " + FLAGS.valid_hypothesis_path)
 
 
 def main_simple():
+    dictionary = json.loads(open(FLAGS.dictionary_path).readline())
+    dictionary = {dictionary[key]: key for key in dictionary}
     random.seed(SEED)
     np.random.seed(SEED)
 
@@ -173,116 +208,36 @@ def main_simple():
         print "STEP1: Test Init..."
         model = Model(hyper_params=hyper_params)
 
-        train_params = model.build_tower()
-        print len(train_params)
-        test_params = model.build_eval()
-        print len(test_params)
-
-        config = tf.ConfigProto(allow_soft_placement=True)
-        sess = tf.Session(config=config)
-        sess.run(tf.global_variables_initializer())
-
-        f_train = open(FLAGS.training_path, 'r')
-        batches = []
-        count = 0
-        while True:
-            try:
-                batches = []
-                for i in range(FLAGS.batch_size):
-                    line = f_train.readline().strip()
-                    batches.append(json.loads(line))
-            except:
-                break
-
-            hred_hidden_tm1 = [[0.0 for _ in range(1024)] for __ in range(len(batches))]
-            hred_memory_tm1 = [[0.0 for _ in range(1024)] for __ in range(len(batches))]
-            dialogue_loss = [0.0 for _ in range(5)]
-            print "dialogue"
-            for i in range(FLAGS.dia_max_len):
-                src = np.transpose([sample[i]["src"] for sample in batches])
-                src_mask = np.transpose([sample[i]["src_mask"] for sample in batches])
-                tgt_indices = np.transpose([sample[i]["tgt_indices"] for sample in batches])
-                tgt = np.transpose([sample[i]["tgt"] for sample in batches])
-                tgt_mask = np.transpose([sample[i]["tgt_mask"] for sample in batches])
-                turn_mask = [sample[i]["turn_mask"] for sample in batches]
-                enquire_strings = [sample[i]["enquire_strings"] for sample in batches]
-                enquire_entities = [sample[i]["enquire_entities"] for sample in batches]
-                enquire_mask = [sample[i]["enquire_mask"] for sample in batches]
-                enquire_score_golden = [sample[i]["enquire_score_golden"] for sample in batches]
-                diffuse_golden = [sample[i]["diffuse_golden"] for sample in batches]
-                diffuse_mask = [sample[i]["diffuse_mask"] for sample in batches]
-                retriever_score_golden = [sample[i]["retriever_score_golden"] for sample in batches]
-                # hred_hidden_tm1 = [[0.0 for _ in range(1024)] for __ in range(len(batches))]
-                # hred_memory_tm1 = [[0.0 for _ in range(1024)] for __ in range(len(batches))]
-                # print "src_mask"
-                # print len(src_mask), len(src_mask[0])
-
-                feed_dict = {}
-                feed_dict[train_params[0]] = src
-                feed_dict[train_params[1]] = src_mask
-                feed_dict[train_params[2]] = tgt_indices
-                feed_dict[train_params[3]] = tgt
-                feed_dict[train_params[4]] = tgt_mask
-                feed_dict[train_params[5]] = turn_mask
-                feed_dict[train_params[6]] = enquire_strings
-                feed_dict[train_params[7]] = enquire_entities
-                feed_dict[train_params[8]] = enquire_mask
-                feed_dict[train_params[9]] = enquire_score_golden
-                feed_dict[train_params[10]] = diffuse_golden
-                feed_dict[train_params[11]] = diffuse_mask
-                feed_dict[train_params[12]] = retriever_score_golden
-                feed_dict[train_params[13]] = hred_hidden_tm1
-                feed_dict[train_params[14]] = hred_memory_tm1
-
-                loss1, loss2, loss3, loss4, loss, grad, hidden_t, memory_t = sess.run(
-                    [train_params[15], train_params[16], train_params[17], train_params[18], train_params[19],
-                     train_params[20], train_params[21], train_params[22]], feed_dict)
-
-                hred_hidden_tm1 = hidden_t
-                hred_memory_tm1 = memory_t
-
-                print "sentence_result"
-                print loss1, loss2, loss3, loss4, loss, time.ctime()
-                dialogue_loss[0] += loss1
-                dialogue_loss[1] += loss2
-                dialogue_loss[2] += loss3
-                dialogue_loss[3] += loss4
-                dialogue_loss[4] += loss
-                print "grad"
-                print grad
-                print "hidden/memory"
-                print hred_hidden_tm1, hred_memory_tm1
-            print "dialogue_result"
-            print [x/5.0 for x in dialogue_loss]
-            count += 1
-            if count == 2:
-                exit(0)
-
-
-
-    '''dictionary = json.loads(open(FLAGS.dictionary_path).readline())
-    dictionary = {dictionary[key]: key for key in dictionary}
-
-    with tf.device('/cpu:0'):
-        tf.logging.info("STEP1: Init...")
-        model = Model(hyper_params=hyper_params)
-
         tower_records = []
         tf.logging.info("STEP2: Map/Reduce...")
         for gpu_id in range(FLAGS.GPU_num):
             with tf.device('/gpu:%d' % gpu_id):
-                tf.logging.info('Building tower:%d...' % gpu_id)
+                tf.logging.info('Building tower: %d...' % gpu_id)
                 with tf.name_scope('tower_%d' % gpu_id):
                     with tf.variable_scope('cpu_variables', reuse=gpu_id > 0):
-                        s_d, s_m, turn_m, t_d, t_m, _, loss_simple, grad_simple, _, _ = model.build_tower()
-                        tower_records.append(
-                            (s_d, s_m, turn_m, t_d, t_m, loss_simple, grad_simple))
+                        t_src, t_src_mask, t_tgt_indices, t_tgt, t_tgt_mask, t_turn_mask, \
+                        t_enquire_strings, t_enquire_entities, t_enquire_mask, t_enquire_score_golden, \
+                        t_diffuse_golden, t_diffuse_mask, t_retriever_score_golden, t_hidden, t_memory, \
+                        t_loss_alpha, t_loss_beta, t_loss_gamma, t_loss_decoder, t_loss, t_grad, \
+                        hidden_t, memory_t = model.build_tower()
 
-        _, _, _, _, _, tower_losses, tower_grads = zip(*tower_records)
-        avg_loss = tf.reduce_mean(tower_losses)
+                        tower_records.append(
+                            (t_src, t_src_mask, t_tgt_indices, t_tgt, t_tgt_mask, t_turn_mask,
+                             t_enquire_strings, t_enquire_entities, t_enquire_mask, t_enquire_score_golden,
+                             t_diffuse_golden, t_diffuse_mask, t_retriever_score_golden, t_hidden, t_memory,
+                             t_loss_alpha, t_loss_beta, t_loss_gamma, t_loss_decoder, t_loss, t_grad,
+                             hidden_t, memory_t))
+        _, _, _, _, _, _, _, _, _, _, _, _, _, _, _, \
+        tower_losses_alpha, tower_losses_beta, tower_losses_gamma, tower_losses_decoder, tower_losses, tower_grads,\
+        tower_hiddens, tower_memorys = zip(*tower_records)
+        avg_losses_alpha = tf.reduce_mean(tower_losses_alpha)
+        avg_losses_beta = tf.reduce_mean(tower_losses_beta)
+        avg_losses_gamma = tf.reduce_mean(tower_losses_gamma)
+        avg_losses_decoder = tf.reduce_mean(tower_losses_decoder)
+        avg_losses = tf.reduce_mean = tf.reduce_mean(tower_losses)
         update = model.optimizer.apply_gradients(average_gradients(tower_grads))
 
-        valid_sd, valid_sm, valid_tm, valid_prob, valid_pred = model.build_eval()
+        valid_params = model.build_eval()
 
         config = tf.ConfigProto(allow_soft_placement=True)
         config.gpu_options.allow_growth = True
@@ -296,11 +251,13 @@ def main_simple():
 
         tf.logging.info("STEP3: Training...")
         for ep in range(FLAGS.epoch):
-            train_iter(ep, sess, model, tower_records, avg_loss, tower_losses, update)
+            train_iter(ep, sess, model, tower_records,
+                       avg_losses_alpha, avg_losses_beta, avg_losses_gamma, avg_losses_decoder, avg_losses,
+                       tower_losses, update)
 
             if ep % 5 == 0:
                 tf.logging.info("STEP4: Evaluating...")
-                valid_iter(ep, sess, valid_sd, valid_sm, valid_tm, valid_prob, valid_pred, dictionary)'''
+                valid_iter(ep, sess, valid_params, dictionary)
 
 
 if __name__ == "__main__":

@@ -217,13 +217,13 @@ class DiffuseModel(graph_base.GraphBase):
         hred_hidden_tm1 = tf.placeholder(dtype=tf.float32, shape=[1, self.hyper_params["hred_h_dim"]])
         hred_memory_tm1 = tf.placeholder(dtype=tf.float32, shape=[1, self.hyper_params["hred_h_dim"]])
 
-        enquire_score, diffuse_prob, retriever_score, prob, pred = self._test_step(
+        enquire_score, diffuse_index, retriever_score, prob, pred = self._test_step(
             src, src_mask, turn_mask, enquire_strings, enquire_entities, enquire_mask,
             hred_hidden_tm1, hred_memory_tm1)
 
         return src, src_mask, turn_mask, enquire_strings, enquire_entities, enquire_mask, \
                hred_hidden_tm1, hred_memory_tm1, \
-               enquire_score, diffuse_prob, retriever_score, prob, pred
+               enquire_score, diffuse_index, retriever_score, prob, pred
 
     def _test_step(self, src, src_mask, turn_mask,
                    enquire_strings, enquire_entities, enquire_mask,
@@ -259,7 +259,8 @@ class DiffuseModel(graph_base.GraphBase):
         candidate_emb = tf.concat([enquire_entities_avg, diffuse_entities_emb], 1)          # size * can_num * e_dim
         candidate_mask = tf.concat([enquire_entity_mask, tf.expand_dims(
             tf.ones([1, FLAGS.diffuse_can_num]), -1)], 1)  # size * can_num * 1
-        sum_content = tf.reduce_sum(candidate_emb * candidate_mask, 1) / tf.reduce_sum(candidate_mask, 1)
+        sum_content = tf.reduce_sum(candidate_emb * candidate_mask, 1) / \
+                      tf.clip_by_value(tf.reduce_sum(candidate_mask, 1), 1.0, FLAGS.candidate_num)
 
         tgt_utterance, hred_memory = self.hred.lstm.step_with_content(
             src_utterance, tf.expand_dims(turn_mask, -1),
@@ -271,7 +272,7 @@ class DiffuseModel(graph_base.GraphBase):
         prob, pred = self.decoder.forward_with_beam(
             tgt_utterance, sum_content, retriever_score, pred_embedding)
 
-        return enquire_score, diffuse_prob, retriever_score, prob, pred
+        return enquire_score, diffuse_index, retriever_score, prob, pred
 
     def get_optimizer(self, *args, **kwargs):
         # return tf.train.GradientDescentOptimizer(FLAGS.learning_rate)
