@@ -162,7 +162,7 @@ def valid_iter(ep_no, sess, valid_params, dictionary):
             feed_dict[valid_params[7]] = hred_memorys
 
             outputs = sess.run([valid_params[9], valid_params[11], valid_params[12]], feed_dict=feed_dict)
-            diffuse_indices = outputs[1][0]
+            diffuse_indices = outputs[0][0]
             pred_sentence = outputs[2]          # beam_size * max_len
 
             src_flatten = np.transpose(src).tolist()[0][0: int(sum(x[0] for x in src_mask))]

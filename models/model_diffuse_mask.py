@@ -128,10 +128,8 @@ class DiffuseModel(graph_base.GraphBase):
             * tf.expand_dims(diffuse_mask, -1), 1),
                                [0, FLAGS.common_vocab],
                                [FLAGS.batch_size, FLAGS.entities])          # size * entities_num
-
-        train_loss_beta = tf.reduce_mean(diffuse_prob)
-        # train_loss_beta = tf.reduce_mean(tf.reduce_sum(tf.square((golden_beta * diffuse_prob) - golden_beta), -1)
-        #                                  * turn_mask)
+        train_loss_beta = tf.reduce_mean(tf.reduce_sum(tf.square((golden_beta * diffuse_prob) - golden_beta), -1)
+                                         * turn_mask)
         train_loss_gamma = tf.reduce_mean(tf.reduce_sum(tf.square(retriever_score - retriever_score_golden), -1)
                                           * turn_mask)
         train_loss_decoder = -tf.reduce_mean(
@@ -161,7 +159,7 @@ class DiffuseModel(graph_base.GraphBase):
         # TODO: try a smaller type embedding
 
         src_emb = tf.nn.embedding_lookup(self.embedding, src)                                   # len * size * emb_dim
-        tgt_emb = tf.nn.embedding_lookup(self.embedding, tgt_indices)                           # len * size * emb_dim
+        # tgt_emb = tf.nn.embedding_lookup(self.embedding, tgt_indices)                           # len * size * emb_dim
         position_emb = self.embedding[-FLAGS.sen_max_len:]
         src_emb_with_position = tf.transpose((tf.transpose(src_emb, [1, 0, 2]) + position_emb), [1, 0, 2])\
                                 * tf.expand_dims(src_mask, -1)                     # len * size * emb_dim(0 for null)
@@ -189,6 +187,29 @@ class DiffuseModel(graph_base.GraphBase):
         candidate_mask = tf.concat([enquire_entity_mask, tf.expand_dims(diffuse_mask, -1)], 1)  # size * can_num * 1
         sum_content = tf.reduce_sum(candidate_emb * candidate_mask, 1) / \
                       tf.clip_by_value(tf.reduce_sum(candidate_mask, 1), 1.0, FLAGS.candidate_num)
+
+        pred_embedding = tf.concat([
+            tf.tile(tf.expand_dims(
+                tf.slice(self.embedding, [0, 0], [FLAGS.common_vocab, self.hyper_params["emb_dim"]]), 0),
+                [FLAGS.batch_size, 1, 1]),
+            candidate_emb], 1)                                                              # size * v+c_num * e_dim
+        emb_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).unstack(pred_embedding)
+        idx_ta = tensor_array_ops.TensorArray(dtype=tf.int32, size=0, dynamic_size=True).\
+            unstack(tf.transpose(tgt))
+        tgt_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
+        def _loop_body(i, emb_ta, idx_ta, tgt_e_ta):
+            emb_t = emb_ta.read(i)                                                          # v+c_num * e_dim
+            idx_t = idx_ta.read(i)                                                          # max_len
+            tgt_e = tf.nn.embedding_lookup(emb_t, idx_t)                                    # max_len * emb_dim
+            tgt_e_ta = tgt_e_ta.write(i, tgt_e)
+            return i+1, emb_ta, idx_ta, tgt_e_ta
+        _, _, _, tgt_ta = control_flow_ops.while_loop(
+            cond=lambda i, _1, _2, _3: i < FLAGS.batch_size,
+            body=_loop_body,
+            loop_vars=(tf.constant(0, tf.int32),
+                       emb_ta, idx_ta, tgt_ta)
+        )
+        tgt_emb = tf.transpose(tgt_ta.stack(), [1, 0, 2])
 
         src_utterance = self.encoder.forward(src_emb, src_mask)[-1]
         knowledge_utterance, enquire_score = self.kb_retriever.enquirer_unit(
@@ -228,6 +249,7 @@ class DiffuseModel(graph_base.GraphBase):
     def _test_step(self, src, src_mask, turn_mask,
                    enquire_strings, enquire_entities, enquire_mask,
                    hred_hidden_tm1, hred_memory_tm1):
+        # TODO: entity embedding has difference here, should be changed to obj embedding
         src_emb = tf.nn.embedding_lookup(self.embedding, src)                                   # len * size * emb_dim
         position_emb = self.embedding[-FLAGS.sen_max_len:]
         src_emb_with_position = tf.transpose((tf.transpose(src_emb, [1, 0, 2]) + position_emb), [1, 0, 2])\
