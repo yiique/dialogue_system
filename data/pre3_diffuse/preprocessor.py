@@ -21,8 +21,8 @@ INDEX_TEST_FILE = "../corpus3/part.index.test"
 
 MAX_LEN = 80
 MAX_TURN = 8
-ENQUIRE_CAN_NUM = 250
-DIFFUSE_CAN_NUM = 50
+ENQUIRE_CAN_NUM = 80
+DIFFUSE_CAN_NUM = 10
 
 
 def file_split():
@@ -382,7 +382,8 @@ def main_for_index(raw_file, index_file):
                 cands.append(index)
 
             for j in range(ENQUIRE_CAN_NUM):
-                sample["retriever_score_golden"][j] = sample["enquire_score_golden"][j]
+		if sample["enquire_objs"][j][0] in sample["tgt_indices"] and sample["enquire_score_golden"][j] == 1:
+                    sample["retriever_score_golden"][j] = sample["enquire_score_golden"][j]
             for j in range(DIFFUSE_CAN_NUM):
                 sample["retriever_score_golden"][j+ENQUIRE_CAN_NUM] = sample["diffuse_mask"][j]
 
@@ -396,11 +397,11 @@ def main_for_index(raw_file, index_file):
 
             '''print "######################################", count, "######################################"
             print "================src================"
-            print raw_src
+            print raw_src.encode('utf-8')
             print sample["src"]
             print sample["src_mask"]
             print "================tgt================"
-            print raw_tgt
+            print raw_tgt.encode('utf-8')
             print tgt_chars
             print sample["tgt_indices"]
             print sample["tgt_mask"]

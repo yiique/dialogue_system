@@ -124,6 +124,14 @@ def valid_iter(ep_no, sess, valid_params, dictionary):
     count = 0
     f_valid = open(FLAGS.valid_path, 'r')
     f_demo = open(FLAGS.valid_demo_path, 'w')
+    alias_dict = json.loads(open("./data/corpus3/part.kb.alias").readline())
+    alias_dict_reversed = {}
+    for key in alias_dict["movie"]:
+	alias_dict_reversed[alias_dict["movie"][key]] = key
+    for key in alias_dict["actor"]:
+	alias_dict_reversed[alias_dict["actor"][key]] = key
+    # movie_alias_reversed = [alias_dict["movie"][key]: key for key in alias_dict["movie"]]
+    # actor_alias_reversed = [alias_dict["actor"][key]: key for key in alias_dict["actor"]]
 
     for _ in f_valid:
         sample = json.loads(_.strip())
@@ -148,6 +156,9 @@ def valid_iter(ep_no, sess, valid_params, dictionary):
             enquire_entities = [sample[i]["enquire_entities"]]
             enquire_mask = [sample[i]["enquire_mask"]]
             enquire_objs = sample[i]["enquire_objs"]
+	    enquire_score_golden = sample[i]["enquire_score_golden"]
+	    diffuse_golden = sample[i]["diffuse_golden"]
+	    retriever_score_golden = sample[i]["retriever_score_golden"]
 
             if int(turn_mask[0]) == 0:
                 break
@@ -161,9 +172,12 @@ def valid_iter(ep_no, sess, valid_params, dictionary):
             feed_dict[valid_params[6]] = hred_hiddens
             feed_dict[valid_params[7]] = hred_memorys
 
-            outputs = sess.run([valid_params[9], valid_params[11], valid_params[12]], feed_dict=feed_dict)
-            diffuse_indices = outputs[0][0]
-            pred_sentence = outputs[2]          # beam_size * max_len
+            outputs = sess.run([valid_params[8], valid_params[9], valid_params[10], valid_params[11], valid_params[12], valid_params[13]], feed_dict=feed_dict)
+	    pred_enquire_score = outputs[0][0]
+	    diffuse_score = outputs[1][0]
+            diffuse_indices = outputs[2][0]
+	    pred_retriever_score = outputs[3][0]
+            pred_sentence = outputs[5]          # beam_size * max_len
 
             src_flatten = np.transpose(src).tolist()[0][0: int(sum(x[0] for x in src_mask))]
             tgt_flatten = tgt_indices[0: int(sum(tgt_mask))]
@@ -178,12 +192,32 @@ def valid_iter(ep_no, sess, valid_params, dictionary):
             else:
                 pred_flatten = pred_flatten[0: pred_flatten.index(FLAGS.end_token)]
             src_tokens = [dictionary[x].encode('utf-8') for x in src_flatten]
-            tgt_tokens = [dictionary[x].encode('utf-8') for x in tgt_flatten]
-            pred_tokens = [dictionary[x].encode('utf-8') for x in pred_flatten]
+            tgt_tokens = [dictionary[x] for x in tgt_flatten]
+	    tgt_tokens = [alias_dict_reversed[x].encode('utf-8') if x in alias_dict_reversed else x.encode('utf-8') for x in tgt_tokens]
+            pred_tokens = [dictionary[x] for x in pred_flatten]
+	    pred_tokens = [alias_dict_reversed[x].encode('utf-8') if x in alias_dict_reversed else x.encode('utf-8') for x in pred_tokens]
+
+	    enquire_loss = [float(x-y) * float(x-y) for x, y in zip(pred_enquire_score, enquire_score_golden)]
+	    diffuse_loss = [int(x!=y) for x, y in zip(diffuse_indices, diffuse_golden)]
+	    retriever_loss = [float(x-y) * float(x-y) for x, y in zip(pred_retriever_score, retriever_score_golden)]
+	    # print enquire_loss
+	    # print diffuse_loss
+
+	    # print "pred_enquire", pred_enquire_score
+	    # print "pred_diffuse", diffuse_indices
+	    # print "pred_retriever", pred_retriever_score
 
             f_demo.write("\t<src>" + " ".join(src_tokens) + "</src>\n")
             f_demo.write("\t<tgt>" + " ".join(tgt_tokens) + "</tgt>\n")
             f_demo.write("\t<pred>" + " ".join(pred_tokens) + "</pred>\n")
+	    f_demo.write("\t<enquire_loss>" + str(sum(enquire_loss)) + "\t\t<diffuse_loss>" + str(sum(diffuse_loss)) + "\t\t<retriever_loss>" + str(sum(retriever_loss)) + "\n")
+	    f_demo.write("\t<pred_enquire>" + " ".join([str(x) for x in pred_enquire_score]) + "\n")
+	    f_demo.write("\t<enquire_golden>" + " ".join([str(x) for x in enquire_score_golden]) + "\n")
+	    f_demo.write("\t<pred_diffuse_score>" + " ".join([str(x) for x in diffuse_score]) + "\n")
+	    f_demo.write("\t<pred_diffuse>" + " ".join([str(x) for x in diffuse_indices]) + "\n")
+	    f_demo.write("\t<diffuse_golden>" + " ".join([str(x) for x in diffuse_golden]) + "\n")
+	    f_demo.write("\t<pred_retriever>" + " ".join([str(x) for x in pred_retriever_score]) + "\n")
+	    f_demo.write("\t<retriever_golden>" + " ".join([str(x) for x in retriever_score_golden]) + "\n")
 
             if count % 25 == ep_no % 25:
                 tf.logging.info("<src>" + " ".join(src_tokens) + "</src>\n")

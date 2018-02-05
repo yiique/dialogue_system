@@ -102,8 +102,8 @@ class KBRetriever(graph_base.GraphBase):
         self.hyper_params["enquirer_mlp_h_dim"] = enquirer_mlp_h_dim
 
         self.hyper_params["diffuser_mlp_layer_num"] = diffuser_mlp_layer_num
-        self.hyper_params["diffuser_mlp_in_dim"] = self.hyper_params["emb_dim"] + self.hyper_params["hred_h_dim"] + \
-                                                   self.hyper_params["encoder_h_dim"] + self.hyper_params["emb_dim"]
+        self.hyper_params["diffuser_mlp_in_dim"] = self.hyper_params["emb_dim"] + self.hyper_params["o_encoder_h_dim"] + \
+                                                   self.hyper_params["encoder_h_dim"] + FLAGS.enquire_can_num + self.hyper_params["emb_dim"]
         self.hyper_params["diffuser_mlp_h_dim"] = diffuser_mlp_h_dim
 
         self.hyper_params["scorer_mlp_layer_num"] = scorer_mlp_layer_num
@@ -114,9 +114,9 @@ class KBRetriever(graph_base.GraphBase):
         self.enquirer_unit, self.diffuser_unit, self.scorer_unit = self.create_retriever()
 
     def create_retriever(self):
-        self.knowledge_encoder = encoder.CNNEncoder(
-            self.hyper_params["encoder_layer_num"], self.hyper_params["encoder_kernel_size"],
-            self.hyper_params["emb_dim"], self.hyper_params["encoder_h_dim"])
+        self.knowledge_encoder = encoder.Encoder(
+            self.hyper_params["encoder_layer_num"],
+            self.hyper_params["emb_dim"], self.hyper_params["encoder_h_dim"], FLAGS.norm)
         self.params.extend(self.knowledge_encoder.params)
 
         self.enquirer_perceptrons = []
@@ -161,14 +161,14 @@ class KBRetriever(graph_base.GraphBase):
             self.score_perceptrons.append([w])
             self.params.extend([w])
 
-        def enquirer_unit(src_with_position, enquire_strings_avg, size=FLAGS.batch_size):
+        def enquirer_unit(src_with_position, src_mask, enquire_strings_avg, size=FLAGS.batch_size):
             """
             :param src_with_position: src embedding with position in max_len * size * emb_dim
             :param enquire_strings_avg: e_c_embedding avg in size * enquire_can_num * emb_dim
                                         note its char embeddings rather than entity embedding here
             :return:
             """
-            knowledge_utterance = self.knowledge_encoder.forward(src_with_position)         # size * h_dim
+            knowledge_utterance = self.knowledge_encoder.forward(src_with_position, src_mask, size)[-1]         # size * h_dim
             hidden = tf.concat([tf.tile(tf.expand_dims(knowledge_utterance, 1), [1, FLAGS.enquire_can_num, 1]),
                                 enquire_strings_avg], 2)                                    # size * e_c_num * e+h_dim
             for i in range(self.hyper_params["enquirer_mlp_layer_num"]):
@@ -179,7 +179,7 @@ class KBRetriever(graph_base.GraphBase):
             return knowledge_utterance, enquire_score
 
         def diffuse_unit(hred_hidden_tm1, knowledge_utterance,
-                         enquire_entities_sum, embedding):
+                         enquire_score, enquire_entities_sum, embedding, size=FLAGS.batch_size):
             """
             :param hred_hidden_tm1: size * hred_h_dim
             :param knowledge_utterance: size * encoder_dim
@@ -192,11 +192,14 @@ class KBRetriever(graph_base.GraphBase):
             entity_embedding = tf.slice(embedding, [FLAGS.common_vocab, 0],
                                         [FLAGS.entities, self.hyper_params["emb_dim"]])  # entities_num * emb_dim
 
-            hidden = tf.concat([hred_hidden_tm1, knowledge_utterance, enquire_entities_sum], 1)
+            hidden = tf.concat([hred_hidden_tm1, knowledge_utterance, enquire_score, enquire_entities_sum], 1)
             hidden_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).unstack(hidden)
             prob_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
 
-            def _loop_body(i, hidden_ta, prob_ta, entity_embedding):
+            def _loop_body(i, prob_ta, hidden_ta, entity_embedding):
+	        # embedding_i = tf.nn.embedding_lookup(embedding, i)
+		# hidden_t = tf.concat([hidden, tf.tile(tf.expand_dims(embedding_i, 0), [size, 1])], 1)
+
                 hidden_t = hidden_ta.read(i)
                 hidden_t = tf.concat([tf.tile(tf.expand_dims(hidden_t, 0), [FLAGS.entities, 1]), entity_embedding],
                                      1)                                                 # entities_num * (sum_len)
@@ -205,15 +208,15 @@ class KBRetriever(graph_base.GraphBase):
                     layer = self.diffuse_perceptrons[j][0]
                     hidden_t = tf.sigmoid(tf.matmul(hidden_t, layer))
 
-                prob_ta = prob_ta.write(i, tf.squeeze(hidden_t))
-                return i+1, hidden_ta, prob_ta, entity_embedding
+                prob_ta = prob_ta.write(i, tf.reduce_sum(hidden_t, -1))
+                return i+1, prob_ta, hidden_ta, entity_embedding
 
-            _, _, prob_ta, _ = control_flow_ops.while_loop(
+            _, prob_ta, _, _ = control_flow_ops.while_loop(
                 cond=lambda i, _1, _2, _3: i < hidden_ta.size(),
                 body=_loop_body,
                 loop_vars=(
                     tf.constant(0, tf.int32),
-                    hidden_ta, prob_ta, entity_embedding)
+                    prob_ta, hidden_ta, entity_embedding)
             )
 
             prob = prob_ta.stack()                                                      # size * entity_num
