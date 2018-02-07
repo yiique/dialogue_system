@@ -365,8 +365,9 @@ class Decoder(graph_base.GraphBase):
             """
             score_gate = tf.sigmoid(tf.matmul(content, self.w_score_lr) + self.b_score_lr)
             score_mask = tf.reduce_sum(
-                tf.slice(tf.one_hot(tf.to_int32(tf.squeeze(word_pred_t)), FLAGS.common_vocab + FLAGS.candidate_num,
-                                    0.0, 1.0), [0, FLAGS.common_vocab], [size, FLAGS.candidate_num]), -1, keep_dims=True
+                tf.slice(tf.one_hot(tf.to_int32(tf.reduce_sum(word_pred_t, -1)),
+                                    FLAGS.common_vocab + FLAGS.candidate_num,
+                                    1.0, 0.0), [0, FLAGS.common_vocab], [size, FLAGS.candidate_num]), -1, keep_dims=True
             )
             score_logits = score_gate * score_tm1 * score_mask + (1. - score_mask) * score_tm1
             return score_logits
