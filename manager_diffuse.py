@@ -197,7 +197,9 @@ def valid_iter(ep_no, sess, valid_params, dictionary):
             pred_tokens = [alias_dict_reversed[x].encode('utf-8') if x in alias_dict_reversed else x.encode('utf-8')
                            for x in pred_tokens]
             diffuse_topk = [alias_dict_reversed[dictionary[x]].encode('utf-8') for x in diffuse_indices]
-            diffuse_golden_topk = [alias_dict_reversed[dictionary[x]].encode('utf-8') for x in diffuse_golden]
+            diffuse_golden_topk = [alias_dict_reversed[dictionary[x]].encode('utf-8')
+                                   if dictionary[x] in alias_dict_reversed else dictionary[x].encode('utf-8')
+                                   for x in diffuse_golden]
 
             enquire_loss = [float(x-y) * float(x-y) for x, y in zip(pred_enquire_score, enquire_score_golden)]
             diffuse_loss = [int(x != y) for x, y in zip(diffuse_indices, diffuse_golden)]
