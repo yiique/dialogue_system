@@ -353,9 +353,7 @@ class Decoder(graph_base.GraphBase):
                 [tf.zeros([size, FLAGS.common_vocab], dtype=tf.float32), score_tm1], 1)
             score_mask = tf.one_hot(tf.to_int32(tf.squeeze(word_pred_t)),
                                     FLAGS.common_vocab + FLAGS.candidate_num, 0.0, 1.0)         # reverse one hot
-            # score_logits = tf.nn.softmax(tf.slice(score_tm1_expand * score_mask,
-            #                                       [0, FLAGS.common_vocab], [size, FLAGS.candidate_num]))
-	    score_logits = tf.slice(score_tm1_expand * score_mask, [0, FLAGS.common_vocab], [size, FLAGS.candidate_num])
+            score_logits = tf.slice(score_tm1_expand * score_mask, [0, FLAGS.common_vocab], [size, FLAGS.candidate_num])
             return score_logits
 
         def gate_score_unit(content, score_tm1, word_pred_t, size=FLAGS.batch_size):
@@ -366,10 +364,11 @@ class Decoder(graph_base.GraphBase):
             :return: score prob in size * can
             """
             score_gate = tf.sigmoid(tf.matmul(content, self.w_score_lr) + self.b_score_lr)
-            score_mask = tf.expand_dims(tf.reduce_sum(
-                tf.one_hot(tf.to_int32(tf.squeeze(word_pred_t)), FLAGS.common_vocab + FLAGS.candidate_num, 1.0, 0.0) *
-                tf.concat([tf.zeros(size, FLAGS.common_vocab), tf.ones(size, FLAGS.candidate_num)], 1), 1), -1)
-            score_logits = tf.nn.softmax(score_gate * score_tm1) * score_mask + (1. - score_mask) * score_tm1
+            score_mask = tf.reduce_sum(
+                tf.slice(tf.one_hot(tf.to_int32(tf.squeeze(word_pred_t)), FLAGS.common_vocab + FLAGS.candidate_num,
+                                    0.0, 1.0), [0, FLAGS.common_vocab], [size, FLAGS.candidate_num]), -1, keep_dims=True
+            )
+            score_logits = score_gate * score_tm1 * score_mask + (1. - score_mask) * score_tm1
             return score_logits
 
         def joint_score_unit(x, word_pred_t, score_tm1, content, cell_tm1s, size=FLAGS.batch_size):
@@ -444,10 +443,13 @@ class Decoder(graph_base.GraphBase):
             score_logits_extend = tf.concat([
                 tf.zeros([size, FLAGS.common_vocab], dtype=tf.float32), score_logits], 1)
 
-            # prob = (gen_logits_extend * tf.slice(latent_logits, [0, 0], [size, 1])) + \
-            #        (score_logits_extend * tf.slice(latent_logits, [0, 1], [size, 1]))
-            # return prob
-	    return gen_logits * tf.slice(latent_logits, [0, 0], [size, 1])
+            # prob with latent
+            # prob = gen_logits_extend * tf.slice(latent_logits, [0, 0], [size, 1]) \
+            #        + score_logits_extend * tf.slice(latent_logits, [0, 1], [size, 1])
+            # prob direct from decoder
+            prob = gen_logits * tf.reduce_sum(latent_logits, 1, keep_dims=True)
+
+            return prob
 
         if self.hyper_params["decoder_type"] == "MASK":
             return mask_score_unit, gen_unit, latent_unit, predict_unit

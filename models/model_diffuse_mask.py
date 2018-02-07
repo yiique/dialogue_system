@@ -49,10 +49,13 @@ class DiffuseModel(graph_base.GraphBase):
             [self.hyper_params["decoder_gen_layer_num"], self.hyper_params["emb_dim"],
              self.hyper_params["decoder_gen_h_dim"], self.hyper_params["hred_h_dim"] + FLAGS.candidate_num,
              FLAGS.common_vocab + FLAGS.candidate_num],
-            [], [self.hyper_params["decoder_mlp_layer_num"],
-                 self.hyper_params["emb_dim"] + FLAGS.candidate_num * 2 +
-                 self.hyper_params["hred_h_dim"] + self.hyper_params["decoder_gen_h_dim"],
-                 self.hyper_params["decoder_mlp_h_dim"], 2],
+            [self.hyper_params["hred_h_dim"] + self.hyper_params["emb_dim"] * 2 + FLAGS.candidate_num * 2 +
+             self.hyper_params["emb_dim"],
+             FLAGS.candidate_num],
+            [self.hyper_params["decoder_mlp_layer_num"],
+             self.hyper_params["emb_dim"] + FLAGS.candidate_num * 2 +
+             self.hyper_params["hred_h_dim"] + self.hyper_params["decoder_gen_h_dim"],
+             self.hyper_params["decoder_mlp_h_dim"], 2],
             d_type="MASK", norm=FLAGS.norm, hyper_params=None, params=None)
 
         self.print_params()
@@ -63,8 +66,6 @@ class DiffuseModel(graph_base.GraphBase):
 
         self.params = [self.embedding] + self.encoder.params + self.kb_retriever.params + \
                       self.hred.params + self.decoder.params
-	# self._params = [self.embedding] + self.kb_retriever.params + \
-	# 	       self.hred.params + self.decoder.params
         params_dict = {}
         for i in range(0, len(self.params)):
             params_dict[str(i)] = self.params[i]
@@ -124,9 +125,9 @@ class DiffuseModel(graph_base.GraphBase):
         )
 
         train_loss_alpha = tf.reduce_mean((-tf.reduce_sum(
-				tf.log(tf.clip_by_value(enquire_score, 1e-20, 1.0)) * enquire_score_golden, -1) - \
-					  tf.reduce_sum(
-				tf.log(tf.clip_by_value(1. - enquire_score, 1e-20, 1.0)) * (1. - enquire_score_golden), -1))
+            tf.log(tf.clip_by_value(enquire_score, 1e-20, 1.0)) * enquire_score_golden, -1)
+                                           - tf.reduce_sum(
+            tf.log(tf.clip_by_value(1. - enquire_score, 1e-20, 1.0)) * (1. - enquire_score_golden), -1))
                                           * turn_mask)
         golden_beta = tf.slice(tf.reduce_sum(tf.one_hot(
             diffuse_golden, FLAGS.common_vocab + FLAGS.entities + FLAGS.relations + FLAGS.sen_max_len, 1.0, 0.0)
@@ -134,13 +135,13 @@ class DiffuseModel(graph_base.GraphBase):
                                [0, FLAGS.common_vocab],
                                [FLAGS.batch_size, FLAGS.entities])          # size * entities_num
         train_loss_beta = tf.reduce_mean(tf.reduce_sum(tf.square(golden_beta - diffuse_prob) * (1. - golden_beta), -1)
-                                          * turn_mask) - \
-			  tf.reduce_mean(tf.reduce_sum(
-				golden_beta * tf.log(tf.clip_by_value(diffuse_prob, 1e-20, 1.0)), -1) * turn_mask)
+                                          * turn_mask) \
+                          - tf.reduce_mean(tf.reduce_sum(
+            golden_beta * tf.log(tf.clip_by_value(diffuse_prob, 1e-20, 1.0)), -1) * turn_mask)
         train_loss_gamma = tf.reduce_mean((-tf.reduce_sum(
-				tf.log(tf.clip_by_value(retriever_score, 1e-20, 1.0)) * retriever_score_golden, -1) - \
-					  tf.reduce_sum(
-				tf.log(tf.clip_by_value(1. - retriever_score, 1e-20, 1.0)) * (1. - retriever_score_golden), -1))
+            tf.log(tf.clip_by_value(retriever_score, 1e-20, 1.0)) * retriever_score_golden, -1)
+                                           - tf.reduce_sum(
+            tf.log(tf.clip_by_value(1. - retriever_score, 1e-20, 1.0)) * (1. - retriever_score_golden), -1))
                                           * turn_mask)
         train_loss_decoder = -tf.reduce_mean(
             tf.reduce_sum(
@@ -169,10 +170,6 @@ class DiffuseModel(graph_base.GraphBase):
         # TODO: try a smaller type embedding
 
         src_emb = tf.nn.embedding_lookup(self.embedding, src)                                   # len * size * emb_dim
-        # tgt_emb = tf.nn.embedding_lookup(self.embedding, tgt_indices)                           # len * size * emb_dim
-        position_emb = self.embedding[-FLAGS.sen_max_len:]
-        src_emb_with_position = tf.transpose((tf.transpose(src_emb, [1, 0, 2]) + position_emb), [1, 0, 2])\
-                                * tf.expand_dims(src_mask, -1)                     # len * size * emb_dim(0 for null)
 
         enquire_strings_emb = tf.nn.embedding_lookup(self.embedding, enquire_strings)       # size * e_num * max_l * emb
         enquire_entities_emb = tf.nn.embedding_lookup(self.embedding, enquire_entities)     # size * e_num * 2 * emb
@@ -181,11 +178,9 @@ class DiffuseModel(graph_base.GraphBase):
                               / tf.clip_by_value(tf.expand_dims(tf.reduce_sum(enquire_mask, -1), -1),
                                                  1, FLAGS.sen_max_len)             # size * e_num * emb(0 for null)
         enquire_entities_avg = tf.reduce_mean(enquire_entities_emb, 2)                      # size * e_num * emb_dim
-        enquire_entity_mask = tf.clip_by_value(
-            tf.reduce_sum(enquire_mask, -1, keep_dims=True), 0.0, 1.0)                      # size * e_c_num * 1
         enquire_entities_sum = \
-            tf.reduce_sum(enquire_entities_avg * tf.expand_dims(enquire_score_golden, -1) * enquire_entity_mask, 1)\
-                / tf.clip_by_value(tf.reduce_sum(enquire_entity_mask, [1]),
+            tf.reduce_sum(enquire_entities_avg * tf.expand_dims(enquire_score_golden, -1), 1)\
+                / tf.clip_by_value(tf.reduce_sum(enquire_score_golden, 1, keep_dims=True),
                                    1.0, FLAGS.enquire_can_num)                                   # size * emb_dim
 
         diffuse_prob_golden = tf.reduce_sum(tf.one_hot(
@@ -193,13 +188,12 @@ class DiffuseModel(graph_base.GraphBase):
         diffuse_score_golden, diffuse_index_golden = tf.nn.top_k(diffuse_prob_golden, k=FLAGS.diffuse_can_num)
         diffuse_entities_emb = tf.nn.embedding_lookup(self.embedding, diffuse_index_golden) # size * d_num * e_dim
 
-	sum_content = tf.concat([enquire_entities_sum, tf.reduce_sum(diffuse_entities_emb * tf.expand_dims(diffuse_mask, -1), 1)\
-				/tf.clip_by_value(tf.reduce_sum(diffuse_mask, 1, keep_dims=True), 1.0, FLAGS.diffuse_can_num)], 1)
+        sum_content = tf.concat([
+            enquire_entities_sum,
+            tf.reduce_sum(diffuse_entities_emb * tf.expand_dims(diffuse_mask, -1), 1)
+            / tf.clip_by_value(tf.reduce_sum(diffuse_mask, 1, keep_dims=True), 1.0, FLAGS.diffuse_can_num)], 1)
 
         candidate_emb = tf.concat([enquire_entities_avg, diffuse_entities_emb], 1)          # size * can_num * e_dim
-        # candidate_mask = tf.concat([enquire_entity_mask, tf.expand_dims(diffuse_mask, -1)], 1)  # size * can_num * 1
-        # sum_content = tf.reduce_sum(candidate_emb * candidate_mask, 1) / \
-        #               tf.clip_by_value(tf.reduce_sum(candidate_mask, 1), 1.0, FLAGS.candidate_num)
 
         pred_embedding = tf.concat([
             tf.tile(tf.expand_dims(
@@ -228,19 +222,17 @@ class DiffuseModel(graph_base.GraphBase):
         knowledge_utterance, enquire_score = self.kb_retriever.enquirer_unit(
             src_emb, src_mask, enquire_strings_avg)
         diffuse_prob, diffuse_score, diffuse_index = self.kb_retriever.diffuser_unit(
-            src_utterance, knowledge_utterance, enquire_score_golden, enquire_entities_sum, self.embedding, FLAGS.batch_size)
+            src_utterance, knowledge_utterance, enquire_score_golden, enquire_entities_sum, self.embedding,
+            FLAGS.batch_size)
         retriever_score = self.kb_retriever.scorer_unit(
             hred_hidden_tm1, src_utterance, enquire_score_golden, diffuse_score_golden)
-	# diffuse_entities_emb = tf.nn.embedding_lookup(self.embedding, diffuse_index) # size * d_num * e_dim
-	# sum_content = tf.concat([
-	#     tf.reduce_sum(enquire_entities_avg * tf.expand_dims(enquire_score, -1), 1)/tf.clip_by_value(tf.reduce_sum(enquire_score, -1, keep_dims=True), 1.0, FLAGS.enquire_can_num), 
-	#     tf.reduce_sum(diffuse_entities_emb * tf.expand_dims(diffuse_score, -1), 1)/tf.clip_by_value(tf.reduce_sum(diffuse_score, -1, keep_dims=True), 1.0, FLAGS.diffuse_can_num)], 1)
         tgt_utterance, hred_memory = self.hred.lstm.step_with_content(
             tf.concat([src_utterance, knowledge_utterance], 1), tf.expand_dims(turn_mask, -1),
             sum_content, [hred_hidden_tm1, hred_memory_tm1])
         prob = self.decoder.forward(tf.expand_dims(tgt, -1),
                                     tgt_emb, tf.expand_dims(tgt_mask, -1),
-                                    tgt_utterance, sum_content, tf.concat([enquire_score_golden, diffuse_score_golden], 1))
+                                    tgt_utterance, sum_content,
+                                    tf.concat([enquire_score_golden, diffuse_score_golden], 1))
 
         return enquire_score, diffuse_prob, retriever_score, prob, tgt_utterance, hred_memory
 
@@ -268,9 +260,6 @@ class DiffuseModel(graph_base.GraphBase):
                    hred_hidden_tm1, hred_memory_tm1):
         # TODO: entity embedding has difference here, should be changed to obj embedding
         src_emb = tf.nn.embedding_lookup(self.embedding, src)                                   # len * size * emb_dim
-        position_emb = self.embedding[-FLAGS.sen_max_len:]
-        src_emb_with_position = tf.transpose((tf.transpose(src_emb, [1, 0, 2]) + position_emb), [1, 0, 2])\
-                                * tf.expand_dims(src_mask, -1)                     # len * size * emb_dim(0 for null)
 
         enquire_strings_emb = tf.nn.embedding_lookup(self.embedding, enquire_strings)       # size * e_num * max_l * emb
         enquire_entities_emb = tf.nn.embedding_lookup(self.embedding, enquire_entities)     # size * e_num * 2 * emb
@@ -288,21 +277,20 @@ class DiffuseModel(graph_base.GraphBase):
             src_emb, src_mask, enquire_strings_avg, 1)
         enquire_entities_sum = \
             tf.reduce_sum(enquire_entities_avg * tf.expand_dims(enquire_score, -1) * enquire_entity_mask, 1)\
-                / tf.clip_by_value(tf.reduce_sum(enquire_entity_mask, [1]),
+                / tf.clip_by_value(tf.reduce_sum(tf.reduce_sum(enquire_entity_mask, -1) * enquire_score, -1,
+                                                 keep_dims=True),
                                    1.0, FLAGS.enquire_can_num)                                   # size * emb_dim
         diffuse_prob, diffuse_score, diffuse_index = self.kb_retriever.diffuser_unit(
             src_utterance, knowledge_utterance, enquire_score, enquire_entities_sum, self.embedding, 1)
         retriever_score = self.kb_retriever.scorer_unit(
             hred_hidden_tm1, src_utterance, enquire_score, diffuse_score)
-        diffuse_entities_emb = tf.nn.embedding_lookup(self.embedding, diffuse_index) # size * d_num * e_dim
+        diffuse_entities_emb = tf.nn.embedding_lookup(self.embedding, diffuse_index)        # size * d_num * e_dim
         candidate_emb = tf.concat([enquire_entities_avg, diffuse_entities_emb], 1)          # size * can_num * e_dim
-        # candidate_mask = tf.concat([enquire_entity_mask, tf.expand_dims(
-        #     tf.ones([1, FLAGS.diffuse_can_num]), -1)], 1)  # size * can_num * 1
-        # sum_content = tf.reduce_sum(candidate_emb * candidate_mask, 1) / \
-        #               tf.clip_by_value(tf.reduce_sum(candidate_mask, 1), 1.0, FLAGS.candidate_num)
-	sum_content = tf.concat([
-            tf.reduce_sum(enquire_entities_avg * tf.expand_dims(enquire_score, -1), 1)/tf.clip_by_value(tf.reduce_sum(enquire_score, -1, keep_dims=True), 1.0, FLAGS.enquire_can_num),
-            tf.reduce_sum(diffuse_entities_emb * tf.expand_dims(diffuse_score, -1), 1)/tf.clip_by_value(tf.reduce_sum(diffuse_score, -1, keep_dims=True), 1.0, FLAGS.diffuse_can_num)], 1)
+        sum_content = tf.concat([
+            tf.reduce_sum(enquire_entities_avg * tf.expand_dims(enquire_score, -1), 1)
+            / tf.clip_by_value(tf.reduce_sum(enquire_score, -1, keep_dims=True), 1.0, FLAGS.enquire_can_num),
+            tf.reduce_sum(diffuse_entities_emb * tf.expand_dims(diffuse_score, -1), 1)
+            / tf.clip_by_value(tf.reduce_sum(diffuse_score, -1, keep_dims=True), 1.0, FLAGS.diffuse_can_num)], 1)
 
         tgt_utterance, hred_memory = self.hred.lstm.step_with_content(
             tf.concat([src_utterance, knowledge_utterance], 1), tf.expand_dims(turn_mask, -1),

@@ -14,6 +14,3 @@ class HRED(graph_base.GraphBase):
         self.lstm = graph_base.LSTM(self.hyper_params["in_dim"], self.hyper_params["h_dim"],
                                     self.hyper_params["c_dim"], norm=norm)
         self.params.extend(self.lstm.params)
-
-    # TODO: here step in LSTM class
-    # TODO: rl part didn't implementation

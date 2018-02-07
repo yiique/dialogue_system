@@ -153,7 +153,9 @@ def sentence_processor(string):
 
 def enquire(string, dictionary,
             movie_alias_dict, actor_alias_dict,
-            movie_kb_dict, actor_kb_dict, director_kb_dict):
+            movie_kb_dict, actor_kb_dict, director_kb_dict,
+            entity_history):
+    # entity history is a list record history entity alias in the dialogue
     enquired_strings = []
     enquired_entities = []
     enquired_objs = []
@@ -161,6 +163,7 @@ def enquire(string, dictionary,
 
     enquired_triples = []
     # type(entity/triple), entity_alias, entity, relation, entity
+    new_history = []
 
     enquired_movies = []
     enquired_actors = []
@@ -171,17 +174,20 @@ def enquire(string, dictionary,
             enquired_movies.append(movie_alias)
             enquired_triples.append(
                 ["entity", movie_alias, movie_id, movie_id, movie_id])
+            new_history.append(movie_alias)
     for actor_alias in actor_alias_dict:
         if actor_alias in string:
             actor_id = actor_alias_dict[actor_alias]
             enquired_actors.append(actor_alias)
             enquired_triples.append(
                 ["entity", actor_alias, actor_id, actor_id, actor_id])
+            new_history.append(actor_alias)
     for director in director_kb_dict:
         if director in string:
             enquired_directors.append(director)
             enquired_triples.append(
                 ["entity", director, director, director, director])
+            new_history.append(director)
 
     for movie_alias in enquired_movies:
         movie_id = movie_alias_dict[movie_alias]
@@ -215,6 +221,34 @@ def enquire(string, dictionary,
             enquired_triples.append(
                 ["triple", actor_alias, actor_id, "act_movie", movie])'''
 
+    for entity in entity_history:
+        if entity in movie_alias_dict:
+            movie_id = movie_alias_dict[entity]
+            enquired_triples.append(["entity", entity, movie_id, movie_id, movie_id])
+        elif entity in actor_alias_dict:
+            actor_id = actor_alias_dict[entity]
+            enquired_triples.append(["entity", entity, actor_id, actor_id, actor_id])
+        elif entity in director_kb_dict:
+            enquired_triples.append(["entity", entity, entity, entity, entity])
+    for entity in entity_history:
+        if entity in movie_alias_dict:
+            movie_id = movie_alias_dict[entity]
+            directors = movie_kb_dict[movie_id]["direct_by"]
+            for director in directors:
+                if director not in director_kb_dict:
+                    continue
+                enquired_triples.append(
+                    ["triple", entity, movie_id, "direct_by", director])
+    for entity in entity_history:
+        if entity in movie_alias_dict:
+            movie_id = movie_alias_dict[entity]
+            actors = movie_kb_dict[movie_id]["act_by"]
+            for actor in actors:
+                if actor not in actor_kb_dict:
+                    continue
+                enquired_triples.append(
+                    ["triple", entity, movie_id, "act_by", actor])
+
     for i in range(ENQUIRE_CAN_NUM):
         e_string = [dictionary["<UNK>"] for _ in range(MAX_LEN)]
         e_entity = [dictionary["<UNK>"] for _ in range(2)]
@@ -247,7 +281,9 @@ def enquire(string, dictionary,
         enquired_objs.append(e_obj)
         enquired_masks.append(e_mask)
 
-    return enquired_strings, enquired_entities, enquired_objs, enquired_masks
+    entity_history = new_history + entity_history
+
+    return enquired_strings, enquired_entities, enquired_objs, enquired_masks, entity_history
 
 
 def main_for_index(raw_file, index_file):
@@ -268,6 +304,7 @@ def main_for_index(raw_file, index_file):
         dialogue_sample = []
         drop = False
 
+        entity_history = []
         for i in range(len(dialogue)/2):
             src_sentence = dialogue[i * 2]
             tgt_sentence = dialogue[i * 2 + 1]
@@ -329,8 +366,9 @@ def main_for_index(raw_file, index_file):
 
             sample["turn_mask"] = 1
 
-            e_strings, e_entities, e_objs, e_masks = enquire(
-                raw_src, dictionary, movie_alias_dict, actor_alias_dict, movie_kb_dict, actor_kb_dict, director_kb_dict)
+            e_strings, e_entities, e_objs, e_masks, entity_history = enquire(
+                raw_src, dictionary, movie_alias_dict, actor_alias_dict, movie_kb_dict, actor_kb_dict, director_kb_dict,
+                entity_history)
             sample["enquire_strings"] = e_strings
             sample["enquire_entities"] = e_entities
             sample["enquire_objs"] = e_objs
@@ -380,9 +418,10 @@ def main_for_index(raw_file, index_file):
                 sample["diffuse_mask"][diffuse_count] = 1
                 diffuse_count += 1
                 cands.append(index)
+                entity_history.insert(0, char)
 
             for j in range(ENQUIRE_CAN_NUM):
-		if sample["enquire_objs"][j][0] in sample["tgt_indices"] and sample["enquire_score_golden"][j] == 1:
+                if sample["enquire_objs"][j][0] in sample["tgt_indices"] and sample["enquire_score_golden"][j] == 1:
                     sample["retriever_score_golden"][j] = sample["enquire_score_golden"][j]
             for j in range(DIFFUSE_CAN_NUM):
                 sample["retriever_score_golden"][j+ENQUIRE_CAN_NUM] = sample["diffuse_mask"][j]
