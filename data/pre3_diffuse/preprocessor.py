@@ -340,12 +340,15 @@ def main_for_index(raw_file, index_file):
                 sample["src_mask"][j] = 1
 
             raw_tgt = sentence_processor(tgt_sentence["raw_sentence"])
+            tgt_alias_dict = {}
             for movie in tgt_sentence["movie"]:
                 raw_tgt = raw_tgt.replace(movie[0], "<ENTITY>" + movie[1] + "</ENTITY>")
+                tgt_alias_dict[movie[1]] = movie[0]
             for director in tgt_sentence["director"]:
                 raw_tgt = raw_tgt.replace(director, "<ENTITY>" + director + "</ENTITY>")
             for actor in tgt_sentence["actor"]:
                 raw_tgt = raw_tgt.replace(actor[0], "<ENTITY>" + actor[1] + "</ENTITY>")
+                tgt_alias_dict[actor[1]] = actor[0]
             tgt_chars = []
             tgt_parts = raw_tgt.split("<ENTITY>")
             for part in tgt_parts:
@@ -429,6 +432,8 @@ def main_for_index(raw_file, index_file):
                 sample["diffuse_mask"][diffuse_count] = 1
                 diffuse_count += 1
                 cands.append(index)
+                if char in tgt_alias_dict:
+                    char = tgt_alias_dict[char]
                 entity_history.insert(0, char)
 
             for j in range(ENQUIRE_CAN_NUM):
