@@ -124,11 +124,14 @@ class DiffuseModel(graph_base.GraphBase):
             hred_hidden_tm1, hred_memory_tm1
         )
 
-        train_loss_alpha = tf.reduce_mean((-tf.reduce_sum(
+        '''train_loss_alpha = tf.reduce_mean((-tf.reduce_sum(
             tf.log(tf.clip_by_value(enquire_score, 1e-20, 1.0)) * enquire_score_golden, -1)
                                            - tf.reduce_sum(
             tf.log(tf.clip_by_value(1. - enquire_score, 1e-20, 1.0)) * (1. - enquire_score_golden), -1))
-                                          * turn_mask)
+                                          * turn_mask)'''
+        train_loss_alpha = tf.reduce_mean(tf.reduce_sum(
+            tf.square(enquire_score - enquire_score_golden), -1
+        ) * turn_mask)
         golden_beta = tf.clip_by_value(tf.slice(tf.reduce_sum(tf.one_hot(
             diffuse_golden, FLAGS.common_vocab + FLAGS.entities + FLAGS.relations + FLAGS.sen_max_len, 1.0, 0.0)
             * tf.expand_dims(diffuse_mask, -1), 1),
