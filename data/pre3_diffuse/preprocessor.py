@@ -160,6 +160,7 @@ def enquire(string, dictionary,
     enquired_entities = []
     enquired_objs = []
     enquired_masks = []
+    enquired_alias = []
 
     enquired_triples = []
     # type(entity/triple), entity_alias, entity, relation, entity
@@ -254,6 +255,7 @@ def enquire(string, dictionary,
         e_entity = [dictionary["<UNK>"] for _ in range(2)]
         e_obj = [dictionary["<UNK>"]]
         e_mask = [0 for _ in range(MAX_LEN)]
+        e_alias = "<UNK>"
 
         if i < len(enquired_triples):
             e_triple = enquired_triples[i]
@@ -275,15 +277,18 @@ def enquire(string, dictionary,
             e_entity[0] = dictionary[e_triple[2]]
             e_entity[1] = dictionary[e_triple[3]]
             e_obj[0] = dictionary[e_triple[-1]]
+            e_alias = e_triple[1]
 
         enquired_strings.append(e_string)
         enquired_entities.append(e_entity)
         enquired_objs.append(e_obj)
         enquired_masks.append(e_mask)
+        enquired_alias.append(e_alias)
 
-    entity_history = new_history + entity_history
+    # entity_history = new_history + entity_history
 
-    return enquired_strings, enquired_entities, enquired_objs, enquired_masks, entity_history
+    return enquired_strings, enquired_entities, enquired_objs, enquired_masks, \
+           new_history, enquired_alias
 
 
 def main_for_index(raw_file, index_file):
@@ -366,7 +371,7 @@ def main_for_index(raw_file, index_file):
 
             sample["turn_mask"] = 1
 
-            e_strings, e_entities, e_objs, e_masks, entity_history = enquire(
+            e_strings, e_entities, e_objs, e_masks, new_history, e_alias = enquire(
                 raw_src, dictionary, movie_alias_dict, actor_alias_dict, movie_kb_dict, actor_kb_dict, director_kb_dict,
                 entity_history)
             sample["enquire_strings"] = e_strings
@@ -396,6 +401,10 @@ def main_for_index(raw_file, index_file):
                         if e_can[0] == dictionary[tri[0]] and e_can[1] == dictionary[tri[1]]\
                                 and e_can[2] == dictionary[tri[2]]:
                             sample["enquire_score_golden"][j] = 1
+                if e_alias[j] in entity_history and sample["enquire_score_golden"][j] == 0:
+                    sample["enquire_score_golden"][j] = (1. - float(entity_history.index(e_alias[j]))
+                                                         / float(len(entity_history))) * 0.5
+            entity_history = new_history + entity_history
 
             cands = [x[0] for x in sample["enquire_objs"]]
             golden_objs = []
@@ -413,6 +422,8 @@ def main_for_index(raw_file, index_file):
                 if index < common_vocabs:
                     continue
                 if index in golden_objs:
+                    continue
+                if index in sample["diffuse_golden"]:
                     continue
                 sample["diffuse_golden"][diffuse_count] = index
                 sample["diffuse_mask"][diffuse_count] = 1

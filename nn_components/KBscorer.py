@@ -98,18 +98,20 @@ class KBRetriever(graph_base.GraphBase):
         self.hyper_params["encoder_h_dim"] = encoder_h_dim
 
         self.hyper_params["enquirer_mlp_layer_num"] = enquirer_mlp_layer_num
-        self.hyper_params["enquirer_mlp_in_dim"] = self.hyper_params["emb_dim"] + self.hyper_params["encoder_h_dim"]
+        self.hyper_params["enquirer_mlp_in_dim"] = \
+            self.hyper_params["emb_dim"] + self.hyper_params["encoder_h_dim"] + self.hyper_params["hred_h_dim"]
         self.hyper_params["enquirer_mlp_h_dim"] = enquirer_mlp_h_dim
 
         self.hyper_params["diffuser_mlp_layer_num"] = diffuser_mlp_layer_num
-        self.hyper_params["diffuser_mlp_in_dim"] = self.hyper_params["emb_dim"] + self.hyper_params["o_encoder_h_dim"] \
-                                                   + self.hyper_params["encoder_h_dim"] + FLAGS.enquire_can_num \
-                                                   + self.hyper_params["emb_dim"]
+        self.hyper_params["diffuser_mlp_in_dim"] = \
+            self.hyper_params["emb_dim"] + self.hyper_params["hred_h_dim"] + self.hyper_params["o_encoder_h_dim"] \
+            + self.hyper_params["encoder_h_dim"] + FLAGS.enquire_can_num + self.hyper_params["emb_dim"]
         self.hyper_params["diffuser_mlp_h_dim"] = diffuser_mlp_h_dim
 
         self.hyper_params["scorer_mlp_layer_num"] = scorer_mlp_layer_num
-        self.hyper_params["scorer_mlp_in_dim"] = self.hyper_params["hred_h_dim"] + self.hyper_params["o_encoder_h_dim"]\
-                                                 + FLAGS.enquire_can_num + FLAGS.diffuse_can_num
+        self.hyper_params["scorer_mlp_in_dim"] = \
+            self.hyper_params["hred_h_dim"] + self.hyper_params["o_encoder_h_dim"] \
+            + FLAGS.enquire_can_num + FLAGS.diffuse_can_num
         self.hyper_params["scorer_mlp_h_dim"] = scorer_mlp_h_dim
 
         self.enquirer_unit, self.diffuser_unit, self.scorer_unit = self.create_retriever()
@@ -162,7 +164,7 @@ class KBRetriever(graph_base.GraphBase):
             self.score_perceptrons.append([w])
             self.params.extend([w])
 
-        def enquirer_unit(src_emb, src_mask, enquire_strings_avg, size=FLAGS.batch_size):
+        def enquirer_unit(src_emb, src_mask, enquire_strings_avg, hred_h_tim1, size=FLAGS.batch_size):
             """
             :param src_emb: src embedding with position in max_len * size * emb_dim
             :param enquire_strings_avg: e_c_embedding avg in size * enquire_can_num * emb_dim
@@ -171,6 +173,7 @@ class KBRetriever(graph_base.GraphBase):
             """
             knowledge_utterance = self.knowledge_encoder.forward(src_emb, src_mask, size)[-1]         # size * h_dim
             hidden = tf.concat([tf.tile(tf.expand_dims(knowledge_utterance, 1), [1, FLAGS.enquire_can_num, 1]),
+                                tf.tile(tf.expand_dims(hred_h_tim1, 1), [1, FLAGS.enquire_can_num, 1]),
                                 enquire_strings_avg], 2)                                    # size * e_c_num * e+h_dim
             for i in range(self.hyper_params["enquirer_mlp_layer_num"]):
                 layer = self.enquirer_perceptrons[i][0]
@@ -179,7 +182,7 @@ class KBRetriever(graph_base.GraphBase):
 
             return knowledge_utterance, enquire_score
 
-        def diffuse_unit(hred_hidden_tm1, knowledge_utterance,
+        def diffuse_unit(hred_hidden_tm1, src_utterance, knowledge_utterance,
                          enquire_score, enquire_entities_sum, embedding, size=FLAGS.batch_size):
             """
             use batch loop rather than embedding loop for faster training
@@ -193,7 +196,8 @@ class KBRetriever(graph_base.GraphBase):
             entity_embedding = tf.slice(embedding, [FLAGS.common_vocab, 0],
                                         [FLAGS.entities, self.hyper_params["emb_dim"]])  # entities_num * emb_dim
 
-            hidden = tf.concat([hred_hidden_tm1, knowledge_utterance, enquire_score, enquire_entities_sum], 1)
+            hidden = tf.concat([
+                hred_hidden_tm1, src_utterance, knowledge_utterance, enquire_score, enquire_entities_sum], 1)
             hidden_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).unstack(hidden)
             prob_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
 
