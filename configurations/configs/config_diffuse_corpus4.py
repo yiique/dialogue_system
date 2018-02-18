@@ -19,7 +19,7 @@ tf.flags.DEFINE_integer("sen_max_len", 80, """""")
 
 
 tf.flags.DEFINE_integer("enquire_can_num", 80, """""")
-tf.flags.DEFINE_integer("diffuse_can_num", 10, """""")
+tf.flags.DEFINE_integer("diffuse_can_num", 20, """""")
 tf.flags.DEFINE_integer("candidate_num", 90, """""")
 tf.flags.DEFINE_integer("common_vocab", 2880, """""")
 tf.flags.DEFINE_integer("entities", 50081, """""")

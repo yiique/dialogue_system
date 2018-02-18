@@ -127,9 +127,9 @@ def valid_iter(ep_no, sess, valid_params, dictionary):
     kb_dict = json.loads(open("./data/corpus4/kb.experiment").readline())
     kb2alias_dict = {}
     for key in kb_dict["movie"]:
-        kb2alias_dict[key] = kb_dict["movie"]["title"]
+        kb2alias_dict[key] = kb_dict["movie"][key]["title"]
     for key in kb_dict["celebrity"]:
-        kb2alias_dict[key] = kb_dict["celebrity"]["name"]
+        kb2alias_dict[key] = kb_dict["celebrity"][key]["name"]
 
     for _ in f_valid:
         sample = json.loads(_.strip())
