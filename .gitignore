@@ -22,3 +22,27 @@ data/corpus3/part.raw.test
 data/corpus3/part.raw.train
 
 data/corpus3/part.raw.valid
+
+data/corpus4/data.experiment
+
+data/corpus4/data.index.valid
+
+data/corpus4/data.demo
+
+*.demo
+
+data/corpus4/data.experiment.valid
+
+data/corpus4/data.experiment.test
+
+data/corpus4/data.experiment.train
+
+data/corpus4/data.experiment.train
+
+data/corpus4/data.index.test
+
+data/corpus4/data.index.train
+
+data/corpus4/kb.experiment
+
+data/corpus4/dictionary
