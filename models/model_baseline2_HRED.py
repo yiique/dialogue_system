@@ -34,7 +34,7 @@ class BaselineModel(graph_base.GraphBase):
             self.hyper_params["encoder_layer_num"], self.hyper_params["emb_dim"],
             self.hyper_params["encoder_h_dim"], norm=FLAGS.norm)
         self.hred = HRED.HRED(self.hyper_params["encoder_h_dim"],
-                              self.hyper_params["hred_h_dim"], 0, norm=FLAGS.norm)
+                              self.hyper_params["hred_h_dim"], 1, norm=FLAGS.norm)
         self.decoder = decoder.AuxDecoder([
             self.hyper_params["decoder_layer_num"], self.hyper_params["emb_dim"], self.hyper_params["decoder_h_dim"],
             self.hyper_params["hred_h_dim"], FLAGS.vocab_size
@@ -82,7 +82,7 @@ class BaselineModel(graph_base.GraphBase):
         train_loss_decoder = -tf.reduce_mean(
             tf.reduce_sum(
                 tf.reduce_sum(
-                    tf.one_hot(tf.to_int32(tgt_indices), FLAGS.common_vocab + FLAGS.candidate_num, 1.0, 0.0) *
+                    tf.one_hot(tf.to_int32(tgt_indices), FLAGS.vocab_size, 1.0, 0.0) *
                     tf.log(tf.clip_by_value(decoder_prob, 1e-20, 1.0)), -1) * tgt_mask,
                 0)
         )
@@ -102,8 +102,8 @@ class BaselineModel(graph_base.GraphBase):
         src_utterance = self.encoder.forward(src_emb, src_mask)[-1]
         tgt_utterance, hred_memory = self.hred.lstm.step_with_content(
             src_utterance, tf.expand_dims(turn_mask, -1),
-            tf.zeros([FLAGS.batch_size, 0]), [hred_hidden_tm1, hred_memory_tm1])
-        prob = self.decoder.forward(tgt_emb, tf.expand_dims(tgt_mask, -1), tgt_utterance, 1)
+            tf.zeros([FLAGS.batch_size, 1]), [hred_hidden_tm1, hred_memory_tm1])
+        prob = self.decoder.forward(tgt_emb, tf.expand_dims(tgt_mask, -1), tgt_utterance)
 
         return prob, tgt_utterance, hred_memory
 
@@ -129,7 +129,7 @@ class BaselineModel(graph_base.GraphBase):
 
         tgt_utterance, hred_memory = self.hred.lstm.step_with_content(
             src_utterance, tf.expand_dims(turn_mask, -1),
-            tf.zeros([FLAGS.beam_size, 0]), [hred_hidden_tm1, hred_memory_tm1])
+            tf.zeros([FLAGS.beam_size, 1]), [hred_hidden_tm1, hred_memory_tm1])
 
         prob, pred = self.decoder.test_forward(tgt_utterance, self.embedding, 1)
 

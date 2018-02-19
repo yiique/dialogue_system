@@ -16,8 +16,8 @@ FLAGS = tf.flags.FLAGS
 
 
 # Change config in configs and model in models to judge model
-from configurations.configs import config_baseline1_LSTM as model_config
-from models.model_baseline1_LSTM import BaselineModel as Model
+from configurations.configs import config_diffuse_corpus4 as model_config
+from models.model_diffuse_mask import DiffuseModel as Model
 # TODO: highway, dropout
 
 
@@ -40,7 +40,8 @@ def average_gradients(tower_grads):
 
 
 def train_iter(ep, sess, model, tower_records,
-               tower_losses_decoder, avg_losses_decoder, update):
+               avg_losses_alpha, avg_losses_decoder, avg_losses,
+               tower_losses, update):
     count = 0
     losses = []
     f_train = open(FLAGS.training_path, 'r')
@@ -68,19 +69,31 @@ def train_iter(ep, sess, model, tower_records,
                 src = np.transpose([sample[i]["src"] for sample in batches[j]])
                 src_mask = np.transpose([sample[i]["src_mask"] for sample in batches[j]])
                 tgt_indices = np.transpose([sample[i]["tgt_indices"] for sample in batches[j]])
+                tgt = np.transpose([sample[i]["tgt"] for sample in batches[j]])
                 tgt_mask = np.transpose([sample[i]["tgt_mask"] for sample in batches[j]])
+                enquire_strings = [sample[i]["enquire_strings"] for sample in batches[j]]
+                enquire_entities = [sample[i]["enquire_entities"] for sample in batches[j]]
+                enquire_mask = [sample[i]["enquire_mask"] for sample in batches[j]]
+                enquire_score_golden = [sample[i]["enquire_score_golden"] for sample in batches[j]]
 
                 feed_dict[tower_records[j][0]] = src
                 feed_dict[tower_records[j][1]] = src_mask
                 feed_dict[tower_records[j][2]] = tgt_indices
-                feed_dict[tower_records[j][3]] = tgt_mask
+                feed_dict[tower_records[j][3]] = tgt
+                feed_dict[tower_records[j][4]] = tgt_mask
+                feed_dict[tower_records[j][5]] = enquire_strings
+                feed_dict[tower_records[j][6]] = enquire_entities
+                feed_dict[tower_records[j][7]] = enquire_mask
+                feed_dict[tower_records[j][8]] = enquire_score_golden
 
             outputs = sess.run([
-                tower_losses_decoder, avg_losses_decoder, update], feed_dict=feed_dict)
+                avg_losses_alpha, avg_losses_decoder, avg_losses,
+                tower_losses, update], feed_dict=feed_dict)
 
             tf.logging.info("-  -  -  -  -  -  sentence_loss %d -  -  -  -  -  -" % i)
-            tf.logging.info(str(outputs[0]) + "\t/\t" + str(outputs[1]))
-            dialogue_losses.append(outputs[1])
+            tf.logging.info(str(outputs[0]) + "\t/\t" + str(outputs[1]) + "\t/\t" + str(outputs[2]) +
+                            "\t/\t" + str(outputs[3]))
+            dialogue_losses.append(outputs[2])
 
         dialogue_loss = np.mean(dialogue_losses)
         tf.logging.info("---------------------dialogue_loss-------------------")
@@ -105,6 +118,7 @@ def valid_iter(ep_no, sess, valid_params, dictionary):
 
     for _ in f_valid:
         sample = json.loads(_.strip())
+
         count += 1
 
         f_demo.write("<dialogue>\n")
@@ -118,20 +132,31 @@ def valid_iter(ep_no, sess, valid_params, dictionary):
             tgt_indices = sample[i]["tgt_indices"]
             tgt_mask = sample[i]["tgt_mask"]
             turn_mask = [sample[i]["turn_mask"]]
+            enquire_strings = [sample[i]["enquire_strings"]]
+            enquire_entities = [sample[i]["enquire_entities"]]
+            enquire_mask = [sample[i]["enquire_mask"]]
+            enquire_objs = sample[i]["enquire_objs"]
+            enquire_score_golden = sample[i]["enquire_score_golden"]
 
             if int(turn_mask[0]) == 0:
                 break
 
             feed_dict[valid_params[0]] = src
             feed_dict[valid_params[1]] = src_mask
+            feed_dict[valid_params[2]] = enquire_strings
+            feed_dict[valid_params[3]] = enquire_entities
+            feed_dict[valid_params[4]] = enquire_mask
 
-            outputs = sess.run([valid_params[2], valid_params[3]], feed_dict=feed_dict)
-            pred_sentence = outputs[1]          # beam_size * max_len
+            outputs = sess.run([valid_params[5], valid_params[6], valid_params[7]], feed_dict=feed_dict)
+            pred_enquire_score = outputs[0][0]
+            pred_sentence = outputs[2]          # beam_size * max_len
 
             src_flatten = np.transpose(src).tolist()[0][0: int(sum(x[0] for x in src_mask))]
             tgt_flatten = tgt_indices[0: int(sum(tgt_mask))]
             pred_flatten = pred_sentence[0].tolist()
-
+            for j in range(len(pred_flatten)):
+                if FLAGS.common_vocab <= pred_flatten[j] < FLAGS.common_vocab + FLAGS.enquire_can_num:
+                    pred_flatten[j] = enquire_objs[pred_flatten[j] - FLAGS.common_vocab][0]
             if FLAGS.end_token not in pred_flatten:
                 pass
             else:
@@ -144,9 +169,14 @@ def valid_iter(ep_no, sess, valid_params, dictionary):
             pred_tokens = [kb2alias_dict[x].encode('utf-8') if x in kb2alias_dict else x.encode('utf-8')
                            for x in pred_tokens]
 
+            enquire_loss = [float(x-y) * float(x-y) for x, y in zip(pred_enquire_score, enquire_score_golden)]
+
             f_demo.write("\t<src>" + " ".join(src_tokens) + "</src>\n")
             f_demo.write("\t<tgt>" + " ".join(tgt_tokens) + "</tgt>\n")
             f_demo.write("\t<pred>" + " ".join(pred_tokens) + "</pred>\n")
+            f_demo.write("\t<enquire_loss>" + str(sum(enquire_loss)))
+            f_demo.write("\t<pred_enquire>" + " ".join([str(x) for x in pred_enquire_score]) + "\n")
+            f_demo.write("\t<enquire_golden>" + " ".join([str(x) for x in enquire_score_golden]) + "\n")
 
             if count % 200 == ep_no % 200:
                 tf.logging.info("<src>" + " ".join(src_tokens) + "</src>\n")
@@ -178,15 +208,19 @@ def main_simple():
                 tf.logging.info('Building tower: %d...' % gpu_id)
                 with tf.name_scope('tower_%d' % gpu_id):
                     with tf.variable_scope('cpu_variables', reuse=gpu_id > 0):
-                        t_src, t_src_mask, t_tgt_indices, t_tgt_mask, \
-                        t_loss_decoder, t_grad = model.build_tower()
+                        t_src, t_src_mask, t_tgt_indices, t_tgt, t_tgt_mask, \
+                        t_enquire_strings, t_enquire_entities, t_enquire_mask, t_enquire_score_golden, \
+                        t_loss_alpha, t_loss_decoder, t_loss, t_grad = model.build_tower()
 
                         tower_records.append(
-                            (t_src, t_src_mask, t_tgt_indices, t_tgt_mask,
-                             t_loss_decoder, t_grad))
-        _, _, _, _, \
-        tower_losses_decoder, tower_grads = zip(*tower_records)
+                            (t_src, t_src_mask, t_tgt_indices, t_tgt, t_tgt_mask,
+                             t_enquire_strings, t_enquire_entities, t_enquire_mask, t_enquire_score_golden,
+                             t_loss_alpha, t_loss_decoder, t_loss, t_grad))
+        _, _, _, _, _, _, _, _, _, \
+        tower_losses_alpha, tower_losses_decoder, tower_losses, tower_grads = zip(*tower_records)
+        avg_losses_alpha = tf.reduce_mean(tower_losses_alpha)
         avg_losses_decoder = tf.reduce_mean(tower_losses_decoder)
+        avg_losses = tf.reduce_mean(tower_losses)
         update = model.optimizer.apply_gradients(average_gradients(tower_grads))
 
         valid_params = model.build_eval()
@@ -204,7 +238,8 @@ def main_simple():
         tf.logging.info("STEP3: Training...")
         for ep in range(FLAGS.epoch):
             train_iter(ep, sess, model, tower_records,
-                       tower_losses_decoder, avg_losses_decoder, update)
+                       avg_losses_alpha, avg_losses_decoder, avg_losses,
+                       tower_losses, update)
 
             if ep % 5 == 0:
                 tf.logging.info("STEP4: Evaluating...")
