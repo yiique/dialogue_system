@@ -187,7 +187,7 @@ def main_simple():
         _, _, _, _, \
         tower_losses_decoder, tower_grads = zip(*tower_records)
         avg_losses_decoder = tf.reduce_mean(tower_losses_decoder)
-        update = model.optimizer.apply_gradients(average_gradients(avg_losses_decoder))
+        update = model.optimizer.apply_gradients(average_gradients(tower_grads))
 
         valid_params = model.build_eval()
 

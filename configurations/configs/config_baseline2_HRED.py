@@ -45,6 +45,7 @@ HYPER_PARAMS = {
     "emb_dim": 1024,
     "encoder_layer_num": 1,
     "encoder_h_dim": 1024,
+    "hred_h_dim": 2048,
     "decoder_layer_num": 1,
     "decoder_h_dim": 1024,
 }

@@ -487,7 +487,7 @@ class AuxDecoder(graph_base.GraphBase):
         x_m_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True).unstack(x_m)
         prob_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
         tgt_start_token = tf.one_hot(tf.ones([size], dtype=tf.int32) * FLAGS.start_token,
-                                     FLAGS.common_vocab + FLAGS.candidate_num, 1.0, 0.0)
+                                     FLAGS.vocab_size, 1.0, 0.0)
         prob_ta = prob_ta.write(0, tgt_start_token)
 
         _, _, _, _, _, prob_ta, _ = control_flow_ops.while_loop(
@@ -527,10 +527,10 @@ class AuxDecoder(graph_base.GraphBase):
                utterance, \
                x_emb_ta, x_m_ta, prob_ta, size
 
-    def test_forward(self, utterance, embedding, size=FLAGS.batch_size):
+    def test_forward(self, utterance, embedding, size=FLAGS.beam_size):
         prob_ta = tensor_array_ops.TensorArray(dtype=tf.float32, size=0, dynamic_size=True)
         pred_ta = tensor_array_ops.TensorArray(dtype=tf.int32, size=0, dynamic_size=True)
-        tgt_start_token = tf.ones([FLAGS.batch_size, 1], dtype=tf.int32) * FLAGS.start_token
+        tgt_start_token = tf.ones([FLAGS.beam_size, 1], dtype=tf.int32) * FLAGS.start_token
 
         _, _, _, _, _, prob_ta, pred_ta, _ = control_flow_ops.while_loop(
             cond=lambda i, _1, _2, _3, _4, _5, _6, _7: i < FLAGS.sen_max_len-1,
@@ -547,19 +547,19 @@ class AuxDecoder(graph_base.GraphBase):
 
     def _test_step(self, i, x_pred, gen_cell_tm1,
                    utterance, embedding, prob_ta, pred_ta,
-                   size=FLAGS.batch_size):
+                   size=FLAGS.beam_size):
         x_emb_t = tf.nn.embedding_lookup(embedding, tf.reshape(x_pred, [-1]))
         x_m = tf.ones([size, 1])
 
         gen_cell_ts, gen_logits = self.gen_unit(x_emb_t, x_m, utterance, gen_cell_tm1)
-        gen_pred = tf.to_int32(tf.reshape(tf.arg_max(gen_logits, 1), [FLAGS.batch_size, 1]))
+        gen_pred = tf.to_int32(tf.reshape(tf.arg_max(gen_logits, 1), [FLAGS.beam_size, 1]))
         prob_ta = prob_ta.write(i, gen_logits)
         pred_ta = pred_ta.write(i, gen_pred)
 
         return i+1, gen_pred, \
                tf.reshape(tf.stack(gen_cell_ts),
                           [self.hyper_params["gen_nn_layer_num"], 2,
-                           FLAGS.batch_size, self.hyper_params["gen_nn_h_dim"]]), \
+                           FLAGS.beam_size, self.hyper_params["gen_nn_h_dim"]]), \
                utterance, embedding, prob_ta, pred_ta, size
 
     def create_unit(self):
