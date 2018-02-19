@@ -74,7 +74,7 @@ class BaselineModel(graph_base.GraphBase):
         hred_memory_tm1 = tf.placeholder(dtype=tf.float32, shape=[FLAGS.batch_size, self.hyper_params["hred_h_dim"]])
 
         # supervise_training
-        decoder_prob, hred_memory = self._train_step(
+        decoder_prob, tgt_utterance, hred_memory = self._train_step(
             src, src_mask, tgt_indices, tgt_mask, turn_mask,
             hred_hidden_tm1, hred_memory_tm1
         )
@@ -90,7 +90,7 @@ class BaselineModel(graph_base.GraphBase):
 
         return src, src_mask, tgt_indices, tgt_mask, turn_mask, \
                hred_hidden_tm1, hred_memory_tm1, \
-               train_loss_decoder, train_grad, hred_memory
+               train_loss_decoder, train_grad, tgt_utterance, hred_memory
 
     def _train_step(self,
                     src, src_mask, tgt, tgt_mask, turn_mask,
@@ -105,7 +105,7 @@ class BaselineModel(graph_base.GraphBase):
             tf.zeros([FLAGS.batch_size, 0]), [hred_hidden_tm1, hred_memory_tm1])
         prob = self.decoder.forward(tgt_emb, tf.expand_dims(tgt_mask, -1), tgt_utterance, 1)
 
-        return prob, hred_memory
+        return prob, tgt_utterance, hred_memory
 
     def build_eval(self):
         # placeholder
