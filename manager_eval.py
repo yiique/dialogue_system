@@ -22,14 +22,14 @@ from configurations.configs import config_diffuse_corpus4 as model_config
 from models.model_diffuse_mask import DiffuseModel as Model
 # TODO: highway, dropout
 # baseline1
-# from configurations.configs import config_baseline1_LSTM as model_config_baseline1
-# from models.model_baseline1_LSTM import BaselineModel as BaselineModel1
+# from configurations.configs import config_baseline1_LSTM as model_config
+# from models.model_baseline1_LSTM import BaselineModel as Model
 # baseline2
-# from configurations.configs import config_baseline2_HRED as model_config_baseline2
-# from models.model_baseline2_HRED import BaselineModel as BaselineModel2
+# from configurations.configs import config_baseline2_HRED as model_config
+# from models.model_baseline2_HRED import BaselineModel as Model
 # baseline3
-# from configurations.configs import config_baseline3_GenDS as model_config_baseling3
-# from models.model_baseline3_GenDS import BaselineModel as BaselineModel3
+# from configurations.configs import config_baseline3_GenDS as model_config
+# from models.model_baseline3_GenDS import BaselineModel as Model
 
 
 def valid_LSTM(sess, valid_params, dictionary):
@@ -54,6 +54,8 @@ def valid_LSTM(sess, valid_params, dictionary):
         line = ""
         try:
             line = f_file.readline()
+            if line == "":
+                raise
         except:
             if f_file == f_valid:
                 f_file = f_test
@@ -63,9 +65,6 @@ def valid_LSTM(sess, valid_params, dictionary):
 
         sample = json.loads(line.strip())
         count += 1
-
-        hred_hiddens = [[0.0 for _ in range(model_config.HYPER_PARAMS["hred_h_dim"])]]
-        hred_memorys = [[0.0 for _ in range(model_config.HYPER_PARAMS["hred_h_dim"])]]
 
         if count % 10 == 0:
             print count, time.ctime()
@@ -108,7 +107,7 @@ def valid_LSTM(sess, valid_params, dictionary):
             tgt_tokens = [dictionary[x] for x in tgt_flatten]
             tgt_tokens = [kb2alias_dict[x].encode('utf-8') if x in kb2alias_dict else x.encode('utf-8')
                           for x in tgt_tokens]
-            pred_tokens = [dictionary[x] for x in pred_flatten]
+            pred_tokens = [dictionary[x[0]] for x in pred_flatten]
             pred_tokens = [kb2alias_dict[x].encode('utf-8') if x in kb2alias_dict else x.encode('utf-8')
                            for x in pred_tokens]
 
@@ -142,7 +141,11 @@ def valid_LSTM(sess, valid_params, dictionary):
             f_human.write("\t<tgt>" + " ".join([x for x in tgt_tokens]) + "\n")
             f_human.write("\t<pred>" + " ".join([x for x in pred_tokens]) + "\n")
 
-    # f_valid.close()
+    f_valid.close()
+    f_test.close()
+    f_hyp.close()
+    f_ref.close()
+    f_human.close()
     os.system("perl " + FLAGS.multi_bleu_path + " " + FLAGS.valid_reference_path +
               " < " + FLAGS.valid_hypothesis_path)
     print "acc: ", np.mean(entity_accuracy_list)
@@ -171,6 +174,8 @@ def valid_HRED(sess, valid_params, dictionary):
         line = ""
         try:
             line = f_file.readline()
+            if line == "":
+                raise
         except:
             if f_file == f_valid:
                 f_file = f_test
@@ -228,7 +233,7 @@ def valid_HRED(sess, valid_params, dictionary):
             tgt_tokens = [dictionary[x] for x in tgt_flatten]
             tgt_tokens = [kb2alias_dict[x].encode('utf-8') if x in kb2alias_dict else x.encode('utf-8')
                           for x in tgt_tokens]
-            pred_tokens = [dictionary[x] for x in pred_flatten]
+            pred_tokens = [dictionary[x[0]] for x in pred_flatten]
             pred_tokens = [kb2alias_dict[x].encode('utf-8') if x in kb2alias_dict else x.encode('utf-8')
                            for x in pred_tokens]
 
@@ -262,7 +267,11 @@ def valid_HRED(sess, valid_params, dictionary):
             f_human.write("\t<tgt>" + " ".join([x for x in tgt_tokens]) + "\n")
             f_human.write("\t<pred>" + " ".join([x for x in pred_tokens]) + "\n")
 
-    # f_valid.close()
+    f_valid.close()
+    f_test.close()
+    f_hyp.close()
+    f_ref.close()
+    f_human.close()
     os.system("perl " + FLAGS.multi_bleu_path + " " + FLAGS.valid_reference_path +
               " < " + FLAGS.valid_hypothesis_path)
     print "acc: ", np.mean(entity_accuracy_list)
@@ -292,6 +301,8 @@ def valid_GenDS(sess, valid_params, dictionary):
         line = ""
         try:
             line = f_file.readline()
+            if line == "":
+                raise
         except:
             if f_file == f_valid:
                 f_file = f_test
@@ -301,9 +312,6 @@ def valid_GenDS(sess, valid_params, dictionary):
 
         sample = json.loads(line.strip())
         count += 1
-
-        hred_hiddens = [[0.0 for _ in range(model_config.HYPER_PARAMS["hred_h_dim"])]]
-        hred_memorys = [[0.0 for _ in range(model_config.HYPER_PARAMS["hred_h_dim"])]]
 
         if count % 10 == 0:
             print count, time.ctime()
@@ -384,7 +392,11 @@ def valid_GenDS(sess, valid_params, dictionary):
             f_human.write("\t<tgt>" + " ".join([x for x in tgt_tokens]) + "\n")
             f_human.write("\t<pred>" + " ".join([x for x in pred_tokens]) + "\n")
 
-    # f_valid.close()
+    f_valid.close()
+    f_test.close()
+    f_hyp.close()
+    f_ref.close()
+    f_human.close()
     os.system("perl " + FLAGS.multi_bleu_path + " " + FLAGS.valid_reference_path +
               " < " + FLAGS.valid_hypothesis_path)
     print "acc: ", np.mean(entity_accuracy_list)
@@ -415,6 +427,8 @@ def valid_NKD(sess, valid_params, dictionary):
         line = ""
         try:
             line = f_file.readline()
+            if line == "":
+                raise
         except:
             if f_file == f_valid:
                 f_file = f_test
@@ -532,7 +546,11 @@ def valid_NKD(sess, valid_params, dictionary):
             f_human.write("\t<tgt>" + " ".join([x for x in tgt_tokens]) + "\n")
             f_human.write("\t<pred>" + " ".join([x for x in pred_tokens]) + "\n")
 
-    # f_valid.close()
+    f_valid.close()
+    f_test.close()
+    f_hyp.close()
+    f_ref.close()
+    f_human.close()
     os.system("perl " + FLAGS.multi_bleu_path + " " + FLAGS.valid_reference_path +
               " < " + FLAGS.valid_hypothesis_path)
     print "acc: ", np.mean(entity_accuracy_list)
