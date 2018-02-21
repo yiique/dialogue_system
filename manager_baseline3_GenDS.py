@@ -16,8 +16,8 @@ FLAGS = tf.flags.FLAGS
 
 
 # Change config in configs and model in models to judge model
-from configurations.configs import config_diffuse_corpus4 as model_config
-from models.model_diffuse_mask import DiffuseModel as Model
+from configurations.configs import config_baseline3_GenDS as model_config
+from models.model_baseline3_GenDS import BaselineModel as Model
 # TODO: highway, dropout
 
 

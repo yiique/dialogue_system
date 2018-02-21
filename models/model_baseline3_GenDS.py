@@ -44,14 +44,14 @@ class BaselineModel(graph_base.GraphBase):
             self.hyper_params["scorer_mlp_layer_num"], self.hyper_params["scorer_mlp_h_dim"])
         self.decoder = decoder.Decoder(
             [self.hyper_params["decoder_gen_layer_num"], self.hyper_params["emb_dim"],
-             self.hyper_params["decoder_gen_h_dim"], self.hyper_params["hred_h_dim"] + FLAGS.candidate_num,
+             self.hyper_params["decoder_gen_h_dim"], self.hyper_params["encoder_h_dim"] + FLAGS.candidate_num,
              FLAGS.common_vocab + FLAGS.candidate_num],
             [self.hyper_params["hred_h_dim"] + self.hyper_params["emb_dim"] * 2 + FLAGS.candidate_num * 2 +
              self.hyper_params["emb_dim"],
              FLAGS.candidate_num],
             [self.hyper_params["decoder_mlp_layer_num"],
              self.hyper_params["emb_dim"] + FLAGS.candidate_num * 2 +
-             self.hyper_params["hred_h_dim"] + self.hyper_params["decoder_gen_h_dim"],
+             self.hyper_params["encoder_h_dim"] + self.hyper_params["decoder_gen_h_dim"],
              self.hyper_params["decoder_mlp_h_dim"], 2],
             d_type="GATE", norm=FLAGS.norm, hyper_params=None, params=None)
 
@@ -166,7 +166,7 @@ class BaselineModel(graph_base.GraphBase):
 
         src_utterance = self.encoder.forward(src_emb, src_mask)[-1]
         knowledge_utterance, enquire_score = self.kb_retriever.enquirer_unit(
-            src_emb, src_mask, enquire_strings_avg, tf.zeros(FLAGS.batch_size, self.hyper_params["hred_h_dim"]))
+            src_emb, src_mask, enquire_strings_avg, tf.zeros([FLAGS.batch_size, self.hyper_params["hred_h_dim"]]))
         prob = self.decoder.forward(tf.expand_dims(tgt, -1),
                                     tgt_emb, tf.expand_dims(tgt_mask, -1),
                                     src_utterance, sum_content,
@@ -206,7 +206,7 @@ class BaselineModel(graph_base.GraphBase):
         src_utterance = self.encoder.forward(src_emb, src_mask, 1)[-1]
 
         knowledge_utterance, enquire_score = self.kb_retriever.enquirer_unit(
-            src_emb, src_mask, enquire_strings_avg, tf.zeros(FLAGS.beam_size, self.hyper_params["hred_h_dim"]), 1)
+            src_emb, src_mask, enquire_strings_avg, tf.zeros([1, self.hyper_params["hred_h_dim"]]), 1)
         enquire_entities_sum = \
             tf.reduce_sum(enquire_entities_avg * tf.expand_dims(enquire_score, -1) * enquire_entity_mask, 1)\
                 / tf.clip_by_value(tf.reduce_sum(tf.reduce_sum(enquire_entity_mask, -1) * enquire_score, -1,
