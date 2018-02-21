@@ -45,8 +45,11 @@ def valid_LSTM(sess, valid_params, dictionary):
 
     f_hyp = open(FLAGS.valid_hypothesis_path, 'w')
     f_ref = open(FLAGS.valid_reference_path, 'w')
-    entity_accuracy_list = []
-    entity_recall_list = []
+    QA_entity_accuracy_list = []
+    QA_entity_recall_list = []
+    entire_entity_accuracy_list = []
+    entire_entity_recall_list = []
+    number_of_entity_list = []
     f_human = open("./data/corpus4/demo.human", 'w')
 
     f_file = f_valid
@@ -85,6 +88,7 @@ def valid_LSTM(sess, valid_params, dictionary):
             enquire_golden = sample[i]["enquire_score_golden"]
             enquire_objs = sample[i]["enquire_objs"]
             diffuse_mask = sample[i]["diffuse_mask"]
+            diffuse_golden = sample[i]["diffuse_golden"]
 
             if int(turn_mask[0]) == 0:
                 break
@@ -98,6 +102,19 @@ def valid_LSTM(sess, valid_params, dictionary):
             src_flatten = np.transpose(src).tolist()[0][0: int(sum(x[0] for x in src_mask))]
             tgt_flatten = tgt_indices[0: int(sum(tgt_mask))]
             pred_flatten = pred_sentence[0].tolist()
+
+            golden_enquired_entities = []
+            golden_diffused_entities = []
+            for tgt_index in tgt_flatten:
+                if tgt_index in enquire_objs and tgt_index not in tgt_flatten:
+                    golden_enquired_entities.append(tgt_index)
+                elif tgt_index in diffuse_golden:
+                    golden_diffused_entities.append(tgt_index)
+
+            pred_entities = []
+            for indice in tgt_flatten:
+                if indice > COMMON_VOCAB:
+                    pred_entities.append(indice)
 
             if FLAGS.end_token not in pred_flatten:
                 pass
@@ -114,26 +131,43 @@ def valid_LSTM(sess, valid_params, dictionary):
             # BLEU
             f_ref.write(" ".join([x for x in tgt_tokens]) + "\n")
             f_hyp.write(" ".join([x for x in pred_tokens]) + "\n")
-            # entity
-            pred_enquired_entities = []
-            for indice in tgt_flatten:
-                if indice > COMMON_VOCAB:
-                    pred_enquired_entities.append(indice)
-            if len(pred_enquired_entities) > 0:
+            # number
+            number_of_entity_list.append(float(len(pred_entities)))
+            # part entity
+            if len(golden_enquired_entities) > 0:
+                # acc
                 count_acc = 0.0
-                for entity in pred_enquired_entities:
-                    if [entity] in enquire_objs:
-                        count_acc += 1.0
-                count_acc = float(count_acc)/float(len(pred_enquired_entities))
-                entity_accuracy_list.append(count_acc)
-            if sum(enquire_golden) >= 3:     # TODO
+                if len(pred_entities) > 0:
+                    for entity in pred_entities:
+                        if entity in golden_enquired_entities:
+                            count_acc += 1.0
+                    count_acc /= float(len(pred_entities))
+                # recall
                 count_re = 0.0
-                for j in range(len(enquire_golden)):
-                    if enquire_golden[j] == 1:
-                        if enquire_objs[j][0] in pred_enquired_entities:
-                            count_re += 1.0
-                count_re /= float(sum(enquire_golden))
-                entity_recall_list.append(count_re)
+                for entity in golden_enquired_entities:
+                    if entity in pred_entities:
+                        count_re += 1.0
+                count_re /= float(len(golden_enquired_entities))
+                QA_entity_accuracy_list.append(count_acc)
+                QA_entity_recall_list.append(count_re)
+            # entire entity
+            golden_entities = golden_enquired_entities + golden_diffused_entities
+            if len(golden_entities) > 0:
+                # acc
+                count_acc = 0.0
+                if len(pred_entities) > 0:
+                    for entity in pred_entities:
+                        if entity in golden_entities:
+                            count_acc += 1.0
+                    count_acc /= float(len(pred_entities))
+                # recall
+                count_re = 0.0
+                for entity in golden_entities:
+                    if entity in pred_entities:
+                        count_re += 1.0
+                count_re /= float(len(golden_entities))
+                entire_entity_accuracy_list.append(count_acc)
+                entire_entity_recall_list.append(count_re)
             # cosine
             # human
             f_human.write("<dialogue " + str(count) + ">\n")
@@ -148,8 +182,11 @@ def valid_LSTM(sess, valid_params, dictionary):
     f_human.close()
     os.system("perl " + FLAGS.multi_bleu_path + " " + FLAGS.valid_reference_path +
               " < " + FLAGS.valid_hypothesis_path)
-    print "acc: ", np.mean(entity_accuracy_list)
-    print "recall: ", np.mean(entity_recall_list)
+    print "part acc: ", np.mean(QA_entity_accuracy_list)
+    print "part re: ", np.mean(QA_entity_recall_list)
+    print "entire acc: ", np.mean(entire_entity_accuracy_list)
+    print "entire re: ", np.mean(entire_entity_recall_list)
+    print "numbers: ", np.mean(number_of_entity_list)
 
 
 def valid_HRED(sess, valid_params, dictionary):
@@ -165,8 +202,11 @@ def valid_HRED(sess, valid_params, dictionary):
 
     f_hyp = open(FLAGS.valid_hypothesis_path, 'w')
     f_ref = open(FLAGS.valid_reference_path, 'w')
-    entity_accuracy_list = []
-    entity_recall_list = []
+    QA_entity_accuracy_list = []
+    QA_entity_recall_list = []
+    entire_entity_accuracy_list = []
+    entire_entity_recall_list = []
+    number_of_entity_list = []
     f_human = open("./data/corpus4/demo.human", 'w')
 
     f_file = f_valid
@@ -206,8 +246,9 @@ def valid_HRED(sess, valid_params, dictionary):
             enquire_entities = [sample[i]["enquire_entities"]]
             enquire_mask = [sample[i]["enquire_mask"]]
             enquire_golden = sample[i]["enquire_score_golden"]
-            enquire_objs = sample[i]["enquire_objs"]
+            enquire_objs = [x[0] for x  in sample[i]["enquire_objs"]]
             diffuse_mask = sample[i]["diffuse_mask"]
+            diffuse_golden = sample[i]["diffuse_golden"]
 
             if int(turn_mask[0]) == 0:
                 break
@@ -224,6 +265,20 @@ def valid_HRED(sess, valid_params, dictionary):
             src_flatten = np.transpose(src).tolist()[0][0: int(sum(x[0] for x in src_mask))]
             tgt_flatten = tgt_indices[0: int(sum(tgt_mask))]
             pred_flatten = pred_sentence[0].tolist()
+
+            golden_enquired_entities = []
+            golden_diffused_entities = []
+            for tgt_index in tgt_flatten:
+                if tgt_index in enquire_objs and tgt_index not in tgt_flatten:
+                    golden_enquired_entities.append(tgt_index)
+                elif tgt_index in diffuse_golden:
+                    golden_diffused_entities.append(tgt_index)
+
+            pred_entities = []
+            for indice in tgt_flatten:
+                if indice > COMMON_VOCAB:
+                    pred_entities.append(indice)
+
             if FLAGS.end_token not in pred_flatten:
                 pass
             else:
@@ -240,26 +295,43 @@ def valid_HRED(sess, valid_params, dictionary):
             # BLEU
             f_ref.write(" ".join([x for x in tgt_tokens]) + "\n")
             f_hyp.write(" ".join([x for x in pred_tokens]) + "\n")
-            # entity
-            pred_enquired_entities = []
-            for indice in tgt_flatten:
-                if indice > COMMON_VOCAB:
-                    pred_enquired_entities.append(indice)
-            if len(pred_enquired_entities) > 0:
+            # number
+            number_of_entity_list.append(float(len(pred_entities)))
+            # part entity
+            if len(golden_enquired_entities) > 0:
+                # acc
                 count_acc = 0.0
-                for entity in pred_enquired_entities:
-                    if [entity] in enquire_objs:
-                        count_acc += 1.0
-                count_acc = float(count_acc)/float(len(pred_enquired_entities))
-                entity_accuracy_list.append(count_acc)
-            if sum(enquire_golden) >= 3:     # TODO
+                if len(pred_entities) > 0:
+                    for entity in pred_entities:
+                        if entity in golden_enquired_entities:
+                            count_acc += 1.0
+                    count_acc /= float(len(pred_entities))
+                # recall
                 count_re = 0.0
-                for j in range(len(enquire_golden)):
-                    if enquire_golden[j] == 1:
-                        if enquire_objs[j][0] in pred_enquired_entities:
-                            count_re += 1.0
-                count_re /= float(sum(enquire_golden))
-                entity_recall_list.append(count_re)
+                for entity in golden_enquired_entities:
+                    if entity in pred_entities:
+                        count_re += 1.0
+                count_re /= float(len(golden_enquired_entities))
+                QA_entity_accuracy_list.append(count_acc)
+                QA_entity_recall_list.append(count_re)
+            # entire entity
+            golden_entities = golden_enquired_entities + golden_diffused_entities
+            if len(golden_entities) > 0:
+                # acc
+                count_acc = 0.0
+                if len(pred_entities) > 0:
+                    for entity in pred_entities:
+                        if entity in golden_entities:
+                            count_acc += 1.0
+                    count_acc /= float(len(pred_entities))
+                # recall
+                count_re = 0.0
+                for entity in golden_entities:
+                    if entity in pred_entities:
+                        count_re += 1.0
+                count_re /= float(len(golden_entities))
+                entire_entity_accuracy_list.append(count_acc)
+                entire_entity_recall_list.append(count_re)
             # cosine
             # human
             f_human.write("<dialogue " + str(count) + ">\n")
@@ -274,8 +346,11 @@ def valid_HRED(sess, valid_params, dictionary):
     f_human.close()
     os.system("perl " + FLAGS.multi_bleu_path + " " + FLAGS.valid_reference_path +
               " < " + FLAGS.valid_hypothesis_path)
-    print "acc: ", np.mean(entity_accuracy_list)
-    print "recall: ", np.mean(entity_recall_list)
+    print "part acc: ", np.mean(QA_entity_accuracy_list)
+    print "part re: ", np.mean(QA_entity_recall_list)
+    print "entire acc: ", np.mean(entire_entity_accuracy_list)
+    print "entire re: ", np.mean(entire_entity_recall_list)
+    print "numbers: ", np.mean(number_of_entity_list)
 
 
 def valid_GenDS(sess, valid_params, dictionary):
@@ -291,9 +366,11 @@ def valid_GenDS(sess, valid_params, dictionary):
 
     f_hyp = open(FLAGS.valid_hypothesis_path, 'w')
     f_ref = open(FLAGS.valid_reference_path, 'w')
-    entity_accuracy_list = []
-    entity_recall_list = []
-    cosine_list = []
+    QA_entity_accuracy_list = []
+    QA_entity_recall_list = []
+    entire_entity_accuracy_list = []
+    entire_entity_recall_list = []
+    number_of_entity_list = []
     f_human = open("./data/corpus4/demo.human", 'w')
 
     f_file = f_valid
@@ -330,8 +407,9 @@ def valid_GenDS(sess, valid_params, dictionary):
             enquire_entities = [sample[i]["enquire_entities"]]
             enquire_mask = [sample[i]["enquire_mask"]]
             enquire_golden = sample[i]["enquire_score_golden"]
-            enquire_objs = sample[i]["enquire_objs"]
+            enquire_objs = [x[0] for x in sample[i]["enquire_objs"]]
             diffuse_mask = sample[i]["diffuse_mask"]
+            diffuse_golden = sample[i]["diffuse_golden"]
 
             if int(turn_mask[0]) == 0:
                 break
@@ -349,11 +427,20 @@ def valid_GenDS(sess, valid_params, dictionary):
             src_flatten = np.transpose(src).tolist()[0][0: int(sum(x[0] for x in src_mask))]
             tgt_flatten = tgt_indices[0: int(sum(tgt_mask))]
             pred_flatten = pred_sentence[0].tolist()
+
+            golden_enquired_entities = []
+            golden_diffused_entities = []
+            for tgt_index in tgt_flatten:
+                if tgt_index in enquire_objs and tgt_index not in tgt_flatten:
+                    golden_enquired_entities.append(tgt_index)
+                elif tgt_index in diffuse_golden:
+                    golden_diffused_entities.append(tgt_index)
+
             pred_enquired_entities = []
             pred_diffused_entities = []
             for j in range(len(pred_flatten)):
                 if FLAGS.common_vocab <= pred_flatten[j] < FLAGS.common_vocab + FLAGS.enquire_can_num:
-                    pred_flatten[j] = enquire_objs[pred_flatten[j] - FLAGS.common_vocab][0]
+                    pred_flatten[j] = enquire_objs[pred_flatten[j] - FLAGS.common_vocab]
                     pred_enquired_entities.append(pred_flatten[j])
             if FLAGS.end_token not in pred_flatten:
                 pass
@@ -370,22 +457,45 @@ def valid_GenDS(sess, valid_params, dictionary):
             # BLEU
             f_ref.write(" ".join([x for x in tgt_tokens]) + "\n")
             f_hyp.write(" ".join([x for x in pred_tokens]) + "\n")
-            # entity
-            if len(pred_enquired_entities) > 0:
+            # number
+            number_of_entity_list.append(float(len(pred_enquired_entities) + len(pred_diffused_entities)))
+            # part entity
+            if len(golden_enquired_entities) > 0:
+                # acc
                 count_acc = 0.0
-                for entity in pred_enquired_entities:
-                    if [entity] in enquire_objs:
-                        count_acc += 1.0
-                count_acc = float(count_acc)/float(len(pred_enquired_entities))
-                entity_accuracy_list.append(count_acc)
-            if sum(enquire_golden) > 0 and len(pred_enquired_entities) > 0:     # TODO
+                if len(pred_enquired_entities) > 0:
+                    for entity in pred_enquired_entities:
+                        if entity in golden_enquired_entities:
+                            count_acc += 1.0
+                    count_acc /= float(len(pred_enquired_entities))
+                # recall
                 count_re = 0.0
-                for j in range(len(enquire_golden)):
-                    if enquire_golden[j] == 1:
-                        if enquire_objs[j][0] in pred_enquired_entities:
-                            count_re += 1.0
-                count_re /= float(sum(enquire_golden))
-                entity_recall_list.append(count_re)
+                for entity in golden_enquired_entities:
+                    if entity in pred_enquired_entities:
+                        count_re += 1.0
+                count_re /= float(len(golden_enquired_entities))
+                QA_entity_accuracy_list.append(count_acc)
+                QA_entity_recall_list.append(count_re)
+            # entire entity
+            golden_entities = golden_enquired_entities + golden_diffused_entities
+            pred_entities = pred_enquired_entities + pred_diffused_entities
+            if len(golden_entities) > 0:
+                # acc
+                count_acc = 0.0
+                if len(pred_entities) > 0:
+                    for entity in pred_entities:
+                        if entity in golden_entities:
+                            count_acc += 1.0
+                    count_acc /= float(len(pred_entities))
+                # recall
+                count_re = 0.0
+                for entity in golden_entities:
+                    if entity in pred_entities:
+                        count_re += 1.0
+                count_re /= float(len(golden_entities))
+                entire_entity_accuracy_list.append(count_acc)
+                entire_entity_recall_list.append(count_re)
+
             # human
             f_human.write("<dialogue " + str(count) + ">\n")
             f_human.write("\t<src>" + " ".join([x for x in src_tokens]) + "\n")
@@ -399,9 +509,11 @@ def valid_GenDS(sess, valid_params, dictionary):
     f_human.close()
     os.system("perl " + FLAGS.multi_bleu_path + " " + FLAGS.valid_reference_path +
               " < " + FLAGS.valid_hypothesis_path)
-    print "acc: ", np.mean(entity_accuracy_list)
-    print "recall: ", np.mean(entity_recall_list)
-    print "cos: ", np.mean(cosine_list)
+    print "part acc: ", np.mean(QA_entity_accuracy_list)
+    print "part re: ", np.mean(QA_entity_recall_list)
+    print "entire acc: ", np.mean(entire_entity_accuracy_list)
+    print "entire re: ", np.mean(entire_entity_recall_list)
+    print "numbers: ", np.mean(number_of_entity_list)
 
 
 def valid_NKD(sess, valid_params, dictionary):
@@ -417,9 +529,14 @@ def valid_NKD(sess, valid_params, dictionary):
 
     f_hyp = open(FLAGS.valid_hypothesis_path, 'w')
     f_ref = open(FLAGS.valid_reference_path, 'w')
-    entity_accuracy_list = []
-    entity_recall_list = []
-    cosine_list = []
+    QA_entity_accuracy_list = []
+    QA_entity_recall_list = []
+    entire_entity_accuracy_list = []
+    entire_entity_recall_list = []
+    number_of_entity_list = []
+    positive_cosine_list = []
+    negative_cosine_list = []
+    reduce_cosine_list = []
     f_human = open("./data/corpus4/demo.human", 'w')
 
     f_file = f_valid
@@ -459,8 +576,9 @@ def valid_NKD(sess, valid_params, dictionary):
             enquire_entities = [sample[i]["enquire_entities"]]
             enquire_mask = [sample[i]["enquire_mask"]]
             enquire_golden = sample[i]["enquire_score_golden"]
-            enquire_objs = sample[i]["enquire_objs"]
+            enquire_objs = [x[0] for x in sample[i]["enquire_objs"]]
             diffuse_mask = sample[i]["diffuse_mask"]
+            diffuse_golden = sample[i]["diffuse_golden"]
 
             if int(turn_mask[0]) == 0:
                 break
@@ -484,11 +602,20 @@ def valid_NKD(sess, valid_params, dictionary):
             src_flatten = np.transpose(src).tolist()[0][0: int(sum(x[0] for x in src_mask))]
             tgt_flatten = tgt_indices[0: int(sum(tgt_mask))]
             pred_flatten = pred_sentence[0].tolist()
+
+            golden_enquired_entities = []
+            golden_diffused_entities = []
+            for tgt_index in tgt_flatten:
+                if tgt_index in enquire_objs and tgt_index not in tgt_flatten:
+                    golden_enquired_entities.append(tgt_index)
+                elif tgt_index in diffuse_golden:
+                    golden_diffused_entities.append(tgt_index)
+
             pred_enquired_entities = []
             pred_diffused_entities = []
             for j in range(len(pred_flatten)):
                 if FLAGS.common_vocab <= pred_flatten[j] < FLAGS.common_vocab + FLAGS.enquire_can_num:
-                    pred_flatten[j] = enquire_objs[pred_flatten[j] - FLAGS.common_vocab][0]
+                    pred_flatten[j] = enquire_objs[pred_flatten[j] - FLAGS.common_vocab]
                     pred_enquired_entities.append(pred_flatten[j])
                 elif FLAGS.common_vocab + FLAGS.enquire_can_num <= pred_flatten[j]:
                     pred_flatten[j] = pred_diffuse_indices[pred_flatten[j] - FLAGS.common_vocab - FLAGS.enquire_can_num]
@@ -510,24 +637,46 @@ def valid_NKD(sess, valid_params, dictionary):
             # BLEU
             f_ref.write(" ".join([x for x in tgt_tokens]) + "\n")
             f_hyp.write(" ".join([x for x in pred_tokens]) + "\n")
-            # entity
-            if len(pred_enquired_entities) > 0:
+            # number
+            number_of_entity_list.append(float(len(pred_enquired_entities) + len(pred_diffused_entities)))
+            # part entity
+            if len(golden_enquired_entities) > 0:
+                # acc
                 count_acc = 0.0
-                for entity in pred_enquired_entities:
-                    if [entity] in enquire_objs:
-                        count_acc += 1.0
-                count_acc = float(count_acc)/float(len(pred_enquired_entities))
-                entity_accuracy_list.append(count_acc)
-            if sum(enquire_golden) > 0 and len(pred_enquired_entities) > 0:     # TODO
+                if len(pred_enquired_entities) > 0:
+                    for entity in pred_enquired_entities:
+                        if entity in golden_enquired_entities:
+                            count_acc += 1.0
+                    count_acc /= float(len(pred_enquired_entities))
+                # recall
                 count_re = 0.0
-                for j in range(len(enquire_golden)):
-                    if enquire_golden[j] == 1:
-                        if enquire_objs[j][0] in pred_enquired_entities:
-                            count_re += 1.0
-                count_re /= float(sum(enquire_golden))
-                entity_recall_list.append(count_re)
+                for entity in golden_enquired_entities:
+                    if entity in pred_enquired_entities:
+                        count_re += 1.0
+                count_re /= float(len(golden_enquired_entities))
+                QA_entity_accuracy_list.append(count_acc)
+                QA_entity_recall_list.append(count_re)
+            # entire entity
+            golden_entities = golden_enquired_entities + golden_diffused_entities
+            pred_entities = pred_enquired_entities + pred_diffused_entities
+            if len(golden_entities) > 0:
+                # acc
+                count_acc = 0.0
+                if len(pred_entities) > 0:
+                    for entity in pred_entities:
+                        if entity in golden_entities:
+                            count_acc += 1.0
+                    count_acc /= float(len(pred_entities))
+                # recall
+                count_re = 0.0
+                for entity in golden_entities:
+                    if entity in pred_entities:
+                        count_re += 1.0
+                count_re /= float(len(golden_entities))
+                entire_entity_accuracy_list.append(count_acc)
+                entire_entity_recall_list.append(count_re)
             # cosine
-            if sum(diffuse_mask) > 0:
+            if len(golden_diffused_entities) > 0:
                 positive_cosine = 0.0
                 negative_cosine = 0.0
                 for j in range(FLAGS.diffuse_can_num):
@@ -539,7 +688,9 @@ def valid_NKD(sess, valid_params, dictionary):
                     positive_cosine /= float(len(pred_diffused_entities))
                 if FLAGS.diffuse_can_num - len(pred_diffused_entities) > 0:
                     negative_cosine /= float(FLAGS.diffuse_can_num - len(pred_diffused_entities))
-                cosine_list.append(positive_cosine - negative_cosine)
+                positive_cosine_list.append(positive_cosine)
+                negative_cosine_list.append(negative_cosine)
+                reduce_cosine_list.append(positive_cosine - negative_cosine)
             # human
             f_human.write("<dialogue " + str(count) + ">\n")
             f_human.write("\t<src>" + " ".join([x for x in src_tokens]) + "\n")
@@ -553,9 +704,14 @@ def valid_NKD(sess, valid_params, dictionary):
     f_human.close()
     os.system("perl " + FLAGS.multi_bleu_path + " " + FLAGS.valid_reference_path +
               " < " + FLAGS.valid_hypothesis_path)
-    print "acc: ", np.mean(entity_accuracy_list)
-    print "recall: ", np.mean(entity_recall_list)
-    print "cos: ", np.mean(cosine_list)
+    print "part acc: ", np.mean(QA_entity_accuracy_list)
+    print "part re: ", np.mean(QA_entity_recall_list)
+    print "entire acc: ", np.mean(entire_entity_accuracy_list)
+    print "entire re: ", np.mean(entire_entity_recall_list)
+    print "numbers: ", np.mean(number_of_entity_list)
+    print "pos cos: ", np.mean(positive_cosine_list)
+    print "neg cos: ", np.mean(negative_cosine_list)
+    print "red cos: ", np.mean(reduce_cosine_list)
 
 
 def main_simple():
