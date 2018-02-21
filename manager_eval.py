@@ -106,14 +106,14 @@ def valid_LSTM(sess, valid_params, dictionary):
             golden_enquired_entities = []
             golden_diffused_entities = []
             for tgt_index in tgt_flatten:
-                if tgt_index in enquire_objs and tgt_index not in tgt_flatten:
+                if tgt_index in enquire_objs and enquire_golden[enquire_objs.index(tgt_index)] == 1:
                     golden_enquired_entities.append(tgt_index)
                 elif tgt_index in diffuse_golden:
                     golden_diffused_entities.append(tgt_index)
 
             pred_entities = []
             for indice in tgt_flatten:
-                if indice > COMMON_VOCAB:
+                if indice >= COMMON_VOCAB:
                     pred_entities.append(indice)
 
             if FLAGS.end_token not in pred_flatten:
@@ -269,14 +269,14 @@ def valid_HRED(sess, valid_params, dictionary):
             golden_enquired_entities = []
             golden_diffused_entities = []
             for tgt_index in tgt_flatten:
-                if tgt_index in enquire_objs and tgt_index not in tgt_flatten:
+                if tgt_index in enquire_objs and enquire_golden[enquire_objs.index(tgt_index)] == 1:
                     golden_enquired_entities.append(tgt_index)
                 elif tgt_index in diffuse_golden:
                     golden_diffused_entities.append(tgt_index)
 
             pred_entities = []
             for indice in tgt_flatten:
-                if indice > COMMON_VOCAB:
+                if indice >= COMMON_VOCAB:
                     pred_entities.append(indice)
 
             if FLAGS.end_token not in pred_flatten:
@@ -431,7 +431,7 @@ def valid_GenDS(sess, valid_params, dictionary):
             golden_enquired_entities = []
             golden_diffused_entities = []
             for tgt_index in tgt_flatten:
-                if tgt_index in enquire_objs and tgt_index not in tgt_flatten:
+                if tgt_index in enquire_objs and enquire_golden[enquire_objs.index(tgt_index)] == 1:
                     golden_enquired_entities.append(tgt_index)
                 elif tgt_index in diffuse_golden:
                     golden_diffused_entities.append(tgt_index)
@@ -606,7 +606,7 @@ def valid_NKD(sess, valid_params, dictionary):
             golden_enquired_entities = []
             golden_diffused_entities = []
             for tgt_index in tgt_flatten:
-                if tgt_index in enquire_objs and tgt_index not in tgt_flatten:
+                if tgt_index in enquire_objs and enquire_golden[enquire_objs.index(tgt_index)] == 1:
                     golden_enquired_entities.append(tgt_index)
                 elif tgt_index in diffuse_golden:
                     golden_diffused_entities.append(tgt_index)
